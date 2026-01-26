@@ -1,0 +1,60 @@
+{
+    "name": "italix/orm",
+    "description": "A lightweight, type-safe ORM for PHP with migrations, query builder, and support for MySQL, PostgreSQL, SQLite, and Supabase",
+    "type": "library",
+    "keywords": [
+        "orm",
+        "database",
+        "mysql",
+        "postgresql",
+        "sqlite",
+        "supabase",
+        "query-builder",
+        "migrations",
+        "schema",
+        "pdo"
+    ],
+    "bin": [
+        "bin/ix"
+    ],
+    "homepage": "https://github.com/italix-net/orm",
+    "license": "Apache-2.0",
+    "authors": [
+        {
+            "name": "Italix",
+            "email": "info@italix.dev"
+        }
+    ],
+    "require": {
+        "php": ">=7.4",
+        "ext-pdo": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0"
+    },
+    "suggest": {
+        "ext-pdo_mysql": "Required for MySQL support",
+        "ext-pdo_pgsql": "Required for PostgreSQL/Supabase support",
+        "ext-pdo_sqlite": "Required for SQLite support"
+    },
+    "autoload": {
+        "psr-4": {
+            "Italix\\Orm\\": "src/"
+        },
+        "files": [
+            "src/functions.php",
+            "src/Schema/ColumnTypes.php",
+            "src/Operators/Operators.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Italix\\Orm\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

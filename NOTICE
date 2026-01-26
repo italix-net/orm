@@ -1,0 +1,17 @@
+Italix ORM
+
+Copyright (C) 2026 Italix Sas di Andrea Sivieri e soci
+
+This product includes software developed at Italix.
+
+================================================================================
+
+This library was inspired by Drizzle ORM (https://orm.drizzle.team/),
+a TypeScript ORM by Drizzle Team.
+
+Note: Italix ORM is an independent implementation and is NOT affiliated with,
+endorsed by, or connected to Drizzle Team or the Drizzle ORM project.
+The API design patterns were inspired by Drizzle ORM but the code is
+entirely original.
+
+================================================================================

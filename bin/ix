@@ -1,0 +1,39 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Italix ORM CLI Tool (ix)
+ * 
+ * Database migration and schema management for Italix ORM.
+ * 
+ * @package Italix\Orm
+ * @license Apache-2.0
+ */
+
+// Find autoloader
+$autoloaders = [
+    __DIR__ . '/../vendor/autoload.php',           // When installed as dependency
+    __DIR__ . '/../src/autoload.php',              // Local development
+    __DIR__ . '/../../../autoload.php',            // When in vendor/bin
+];
+
+$autoloader = null;
+foreach ($autoloaders as $file) {
+    if (file_exists($file)) {
+        $autoloader = $file;
+        break;
+    }
+}
+
+if ($autoloader === null) {
+    fwrite(STDERR, "Error: Could not find autoloader.\n");
+    fwrite(STDERR, "Run 'composer install' or ensure src/autoload.php exists.\n");
+    exit(1);
+}
+
+require $autoloader;
+
+// Run the application
+$app = new \Italix\Orm\Console\Application();
+$exitCode = $app->run($argv);
+
+exit($exitCode);

@@ -723,6 +723,126 @@ $user = $db->find_first($users, [
 ]);
 ```
 
+### Eager Loading vs Lazy Loading
+
+Understanding when to use eager loading vs lazy loading is crucial for application performance.
+
+#### The N+1 Query Problem
+
+Without eager loading, accessing related data in a loop causes the "N+1 problem":
+
+```php
+// BAD: N+1 queries (1 query for users + N queries for posts)
+$users = $db->query_table($users)->find_many();  // 1 query
+foreach ($users as $user) {
+    // Each iteration triggers a separate query!
+    $posts = $db->query_table($posts)
+        ->where(eq($posts->author_id, $user['id']))
+        ->find_many();  // N queries
+}
+```
+
+#### Solution: Eager Loading
+
+Eager loading fetches all related data in optimized batch queries:
+
+```php
+// GOOD: 2 queries total (1 for users + 1 for all their posts)
+$users = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find_many();
+
+foreach ($users as $user) {
+    // Posts already loaded - no additional queries
+    foreach ($user['posts'] as $post) {
+        echo $post['title'];
+    }
+}
+```
+
+#### When to Use Eager Loading
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Displaying lists with related data | **Use eager loading** |
+| API responses including nested resources | **Use eager loading** |
+| Reports aggregating data across relations | **Use eager loading** |
+| Loading data you know you'll need | **Use eager loading** |
+
+```php
+// Example: Blog posts list with authors and comment counts
+$posts = $db->query_table($posts)
+    ->with([
+        'author' => true,
+        'comments' => true,
+        'tags' => true,
+    ])
+    ->order_by(desc($posts->created_at))
+    ->limit(20)
+    ->find_many();
+```
+
+#### When to Use Lazy Loading (Manual Queries)
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Conditionally accessing relations | Consider lazy loading |
+| Single record detail views | Either approach works |
+| Relations rarely accessed | Consider lazy loading |
+| Very large related datasets | Load on demand with pagination |
+
+```php
+// Example: Only load comments if user wants to see them
+$post = $db->query_table($posts)->find(1);
+
+if ($showComments) {
+    // Load comments only when needed
+    $comments = $db->query_table($comments)
+        ->where(eq($comments->post_id, $post['id']))
+        ->order_by(desc($comments->created_at))
+        ->find_many();
+}
+```
+
+#### Performance Tips
+
+1. **Don't over-eager**: Only load relations you actually need
+   ```php
+   // BAD: Loading everything "just in case"
+   ->with(['posts' => true, 'comments' => true, 'likes' => true, 'followers' => true])
+
+   // GOOD: Load only what the view needs
+   ->with(['posts' => true])
+   ```
+
+2. **Use filtered relations** for large datasets:
+   ```php
+   // Load only recent posts, not entire history
+   ->with([
+       'posts' => [
+           'where' => gte($posts->created_at, '2024-01-01'),
+           'limit' => 10,
+           'order_by' => [desc($posts->created_at)],
+       ]
+   ])
+   ```
+
+3. **Paginate parent records** when dealing with many items:
+   ```php
+   // Process users in batches
+   $page = 0;
+   do {
+       $users = $db->query_table($users)
+           ->with(['profile' => true])
+           ->limit(100)
+           ->offset($page * 100)
+           ->find_many();
+
+       // Process batch...
+       $page++;
+   } while (count($users) === 100);
+   ```
+
 ## Query Builder
 
 ### SELECT

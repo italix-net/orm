@@ -662,6 +662,247 @@ $user = $db->find_one($users, [
 | `limit` | `int` | Maximum records to load |
 | `with` | `array` | Nested relations to load |
 
+### 6.10 Loading Strategies: Eager vs Lazy
+
+Understanding when to use eager loading versus lazy loading (manual queries) is essential for building performant applications.
+
+#### What is Eager Loading?
+
+**Eager loading** pre-fetches related data in optimized batch queries when you load the parent records. Italix ORM uses the `with` clause for eager loading.
+
+```php
+// Eager loading: 2 queries total
+$users = $db->query_table($users)
+    ->with(['posts' => true, 'profile' => true])
+    ->find_many();
+// Query 1: SELECT * FROM users
+// Query 2: SELECT * FROM posts WHERE author_id IN (1, 2, 3, ...)
+// Query 3: SELECT * FROM profiles WHERE user_id IN (1, 2, 3, ...)
+```
+
+#### What is Lazy Loading?
+
+**Lazy loading** fetches related data on-demand, when you actually access it. In Italix ORM, this means making separate queries when needed.
+
+```php
+// Lazy loading: query relations when needed
+$users = $db->query_table($users)->find_many();  // 1 query
+
+// Later, load posts for a specific user
+$userPosts = $db->query_table($posts)
+    ->where(eq($posts->author_id, $users[0]['id']))
+    ->find_many();  // 1 additional query
+```
+
+#### The N+1 Query Problem
+
+The most common performance issue with ORMs is the "N+1 problem" - loading N related records requires N+1 database queries:
+
+```php
+// PROBLEM: N+1 queries
+$users = $db->query_table($users)->find_many();  // 1 query
+
+foreach ($users as $user) {
+    // Each iteration = 1 additional query
+    $posts = $db->query_table($posts)
+        ->where(eq($posts->author_id, $user['id']))
+        ->find_many();
+
+    echo count($posts) . " posts for " . $user['name'];
+}
+// Total: 1 + N queries (if 100 users = 101 queries!)
+```
+
+**Solution: Use eager loading**
+
+```php
+// SOLUTION: 2 queries total, regardless of user count
+$users = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find_many();
+
+foreach ($users as $user) {
+    // No additional queries - posts already loaded
+    echo count($user['posts']) . " posts for " . $user['name'];
+}
+// Total: 2 queries (even with 1000 users)
+```
+
+#### When to Use Eager Loading
+
+| Use Case | Why Eager Loading |
+|----------|-------------------|
+| **List views with related data** | Prevents N+1 when iterating |
+| **API responses with nested resources** | Single round-trip for all data |
+| **Reports/exports** | Efficient bulk data retrieval |
+| **Data you know you'll access** | Reduces total query count |
+| **Templates/views iterating over relations** | Avoids query-per-row |
+
+**Example: Blog posts listing**
+
+```php
+$posts = $db->query_table($posts)
+    ->with([
+        'author' => true,           // Author name for byline
+        'category' => true,         // Category for filtering/display
+        'tags' => true,             // Tags for display
+        'comments' => [
+            'limit' => 3,           // Just preview, not all
+            'order_by' => [desc($comments->created_at)],
+        ],
+    ])
+    ->where(eq($posts->published, true))
+    ->order_by(desc($posts->created_at))
+    ->limit(20)
+    ->find_many();
+```
+
+#### When to Use Lazy Loading
+
+| Use Case | Why Lazy Loading |
+|----------|------------------|
+| **Conditional data access** | Load only if condition met |
+| **Single record views** | Overhead difference is minimal |
+| **Rarely accessed relations** | Avoid loading unused data |
+| **Very large related datasets** | Load with pagination on demand |
+| **Complex filtering on related data** | More control over the query |
+
+**Example: Conditional loading**
+
+```php
+$user = $db->query_table($users)->find($userId);
+
+// Only load activity log if user is admin viewing their own profile
+if ($isAdmin && $viewingOwnProfile) {
+    $activityLog = $db->query_table($activity_logs)
+        ->where(eq($activity_logs->user_id, $user['id']))
+        ->order_by(desc($activity_logs->created_at))
+        ->limit(50)
+        ->find_many();
+}
+```
+
+**Example: Paginated related data**
+
+```php
+$post = $db->query_table($posts)->find($postId);
+
+// Load comments with pagination (user controls page)
+$page = $_GET['comment_page'] ?? 1;
+$perPage = 20;
+
+$comments = $db->query_table($comments)
+    ->where(eq($comments->post_id, $post['id']))
+    ->order_by(desc($comments->created_at))
+    ->limit($perPage)
+    ->offset(($page - 1) * $perPage)
+    ->find_many();
+```
+
+#### Performance Comparison
+
+| Scenario | Eager Loading | Lazy Loading |
+|----------|---------------|--------------|
+| 100 users, each with posts | 2 queries | 101 queries |
+| 1 user with posts | 2 queries | 2 queries |
+| 100 users, 10% need posts | 2 queries | 11 queries |
+| 100 users, posts rarely shown | 2 queries (wasteful) | 1 query (efficient) |
+
+#### Best Practices
+
+**1. Default to eager loading for lists**
+
+```php
+// When displaying a list, eager load what you'll display
+$orders = $db->query_table($orders)
+    ->with([
+        'customer' => true,
+        'items' => ['with' => ['product' => true]],
+    ])
+    ->find_many();
+```
+
+**2. Don't over-eager**
+
+```php
+// BAD: Loading everything
+$user = $db->query_table($users)
+    ->with([
+        'posts' => true,
+        'comments' => true,
+        'likes' => true,
+        'followers' => true,
+        'following' => true,
+        'notifications' => true,
+    ])
+    ->find($id);
+
+// GOOD: Load only what the current view needs
+$user = $db->query_table($users)
+    ->with(['profile' => true])  // Only profile for header
+    ->find($id);
+```
+
+**3. Use filtered/limited relations for large datasets**
+
+```php
+// Instead of loading ALL posts (could be thousands)
+$user = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'where' => eq($posts->published, true),
+            'order_by' => [desc($posts->created_at)],
+            'limit' => 5,  // Just recent posts
+        ]
+    ])
+    ->find($id);
+```
+
+**4. Batch process with pagination**
+
+```php
+// Process large datasets in chunks
+$offset = 0;
+$batchSize = 100;
+
+do {
+    $users = $db->query_table($users)
+        ->with(['subscription' => true])
+        ->limit($batchSize)
+        ->offset($offset)
+        ->find_many();
+
+    foreach ($users as $user) {
+        processUserSubscription($user);
+    }
+
+    $offset += $batchSize;
+} while (count($users) === $batchSize);
+```
+
+**5. Profile your queries**
+
+Enable query logging to identify N+1 problems:
+
+```php
+// Count queries in development
+$queryCount = 0;
+// ... run your code ...
+// If $queryCount is unexpectedly high, you may have N+1 issues
+```
+
+#### Decision Flowchart
+
+```
+Will you iterate over parent records?
+├─ Yes → Will you access related data for each?
+│        ├─ Yes (all/most) → USE EAGER LOADING
+│        └─ No (few/conditional) → USE LAZY LOADING
+└─ No (single record) → Either approach works
+                        ├─ Known relations needed → Eager (simpler code)
+                        └─ Conditional access → Lazy (more efficient)
+```
+
 ---
 
 ## 7. Query Builder

@@ -430,6 +430,58 @@ test('Filtered relation has correct data', $users_published['posts'][0]['title']
 echo "\n";
 
 // ============================================
+// Test 10: Multi-Dialect Compatibility
+// ============================================
+
+echo "--- Test Group: Multi-Dialect Compatibility ---\n";
+
+// Test SQL generation for different dialects
+use Italix\Orm\Relations\TableQuery;
+use Italix\Orm\Relations\RelationalQueryBuilder;
+
+// Create mock connections for testing SQL generation
+// We test that queries are built correctly for each dialect
+
+// MySQL dialect test
+$mysql_builder = new RelationalQueryBuilder($db->get_connection(), 'mysql');
+$mysql_query = $mysql_builder->query($users)->where(eq($users->id, 1));
+
+// Get SQL by reflection (we can't execute on wrong dialect, but can verify SQL format)
+$reflection = new ReflectionClass($mysql_query);
+$method = $reflection->getMethod('build_sql');
+$method->setAccessible(true);
+$params = [];
+$mysql_sql = $method->invoke($mysql_query, $params);
+test('MySQL uses backtick quoting', strpos($mysql_sql, '`users`') !== false);
+test('MySQL uses ? placeholders', strpos($mysql_sql, '?') !== false);
+
+// PostgreSQL dialect test
+$pg_builder = new RelationalQueryBuilder($db->get_connection(), 'postgresql');
+$pg_query = $pg_builder->query($users)->where(eq($users->id, 1));
+$params = [];
+$pg_sql = $method->invoke($pg_query, $params);
+test('PostgreSQL uses double-quote quoting', strpos($pg_sql, '"users"') !== false);
+test('PostgreSQL uses $1 placeholders', strpos($pg_sql, '$1') !== false);
+
+// SQLite dialect test
+$sqlite_builder = new RelationalQueryBuilder($db->get_connection(), 'sqlite');
+$sqlite_query = $sqlite_builder->query($users)->where(eq($users->id, 1));
+$params = [];
+$sqlite_sql = $method->invoke($sqlite_query, $params);
+test('SQLite uses double-quote quoting', strpos($sqlite_sql, '"users"') !== false);
+test('SQLite uses ? placeholders', strpos($sqlite_sql, '?') !== false);
+
+// Supabase dialect test
+$supabase_builder = new RelationalQueryBuilder($db->get_connection(), 'supabase');
+$supabase_query = $supabase_builder->query($users)->where(eq($users->id, 1));
+$params = [];
+$supabase_sql = $method->invoke($supabase_query, $params);
+test('Supabase uses double-quote quoting', strpos($supabase_sql, '"users"') !== false);
+test('Supabase uses $1 placeholders', strpos($supabase_sql, '$1') !== false);
+
+echo "\n";
+
+// ============================================
 // Summary
 // ============================================
 

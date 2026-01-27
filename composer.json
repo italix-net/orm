@@ -12,7 +12,10 @@
         "query-builder",
         "migrations",
         "schema",
-        "pdo"
+        "pdo",
+        "relations",
+        "eager-loading",
+        "drizzle"
     ],
     "bin": [
         "bin/ix"
@@ -44,7 +47,8 @@
         "files": [
             "src/functions.php",
             "src/Schema/ColumnTypes.php",
-            "src/Operators/Operators.php"
+            "src/Operators/Operators.php",
+            "src/Relations/functions.php"
         ]
     },
     "autoload-dev": {

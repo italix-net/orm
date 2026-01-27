@@ -27,6 +27,7 @@ spl_autoload_register(function ($class) {
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/Schema/ColumnTypes.php';
 require_once __DIR__ . '/Operators/Operators.php';
+require_once __DIR__ . '/Relations/functions.php';
 
 // Sql class is autoloaded, but ensure it's available
 require_once __DIR__ . '/Sql.php';

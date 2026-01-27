@@ -92,24 +92,24 @@ function from_connection_string(string $connection_string): IxOrm
 
 /**
  * Create a SQL builder for custom queries with safe parameter binding
- * 
+ *
  * This function allows building custom SQL while maintaining protection
  * against SQL injection through parameterized queries.
- * 
+ *
  * Usage:
  *   // Create SQL fragment
  *   $condition = sql('age > ? AND status = ?', [18, 'active']);
- *   
+ *
  *   // Build SQL fluently
  *   $query = sql()
  *       ->append('SELECT * FROM users WHERE ')
  *       ->identifier('email')
  *       ->append(' LIKE ')
  *       ->value('%@gmail.com');
- *   
+ *
  *   // Execute with a connection
  *   $db->sql('SELECT * FROM users WHERE id = ?', [$id])->all();
- * 
+ *
  * @param string $query SQL query with ? placeholders
  * @param array $params Parameter bindings
  * @return Sql
@@ -118,3 +118,6 @@ function sql(string $query = '', array $params = []): Sql
 {
     return new Sql($query, $params);
 }
+
+// Re-export relation functions for convenience
+// These are also available directly from Italix\Orm\Relations namespace

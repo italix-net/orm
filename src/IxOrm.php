@@ -13,6 +13,8 @@ namespace Italix\Orm;
 use Italix\Orm\Dialects\Driver;
 use Italix\Orm\Dialects\DialectInterface;
 use Italix\Orm\QueryBuilder\QueryBuilder;
+use Italix\Orm\Relations\RelationalQueryBuilder;
+use Italix\Orm\Relations\TableQuery;
 use Italix\Orm\Schema\Table;
 use Italix\Orm\Sql;
 use PDO;
@@ -24,9 +26,12 @@ class IxOrm
 {
     /** @var Driver Database driver */
     protected Driver $driver;
-    
+
     /** @var QueryBuilder Query builder instance */
     protected QueryBuilder $query_builder;
+
+    /** @var RelationalQueryBuilder|null Relational query builder */
+    protected ?RelationalQueryBuilder $relational_builder = null;
 
     /**
      * Create a new IxOrm instance
@@ -219,17 +224,17 @@ class IxOrm
 
     /**
      * Create a custom SQL query with safe parameter binding
-     * 
+     *
      * This method provides a way to write custom SQL while maintaining
      * protection against SQL injection through parameterized queries.
-     * 
+     *
      * Usage:
      *   // Simple query with parameters
      *   $db->sql('SELECT * FROM users WHERE id = ?', [$userId])->all();
-     *   
+     *
      *   // Multiple parameters
      *   $db->sql('SELECT * FROM users WHERE status = ? AND age > ?', ['active', 18])->all();
-     *   
+     *
      *   // Fluent builder
      *   $db->sql()
      *      ->append('SELECT * FROM ')
@@ -237,7 +242,7 @@ class IxOrm
      *      ->append(' WHERE id = ')
      *      ->value($userId)
      *      ->all();
-     * 
+     *
      * @param string $query SQL query with ? placeholders (optional)
      * @param array $params Parameter bindings (optional)
      * @return Sql
@@ -248,5 +253,145 @@ class IxOrm
         $sql->set_connection($this->driver->get_connection());
         $sql->set_dialect($this->driver->get_dialect_name());
         return $sql;
+    }
+
+    // ============================================
+    // Relational Query Methods (Drizzle-style)
+    // ============================================
+
+    /**
+     * Get the relational query builder
+     *
+     * @return RelationalQueryBuilder
+     */
+    protected function get_relational_builder(): RelationalQueryBuilder
+    {
+        if ($this->relational_builder === null) {
+            $this->relational_builder = new RelationalQueryBuilder(
+                $this->driver->get_connection(),
+                $this->driver->get_dialect_name()
+            );
+        }
+        return $this->relational_builder;
+    }
+
+    /**
+     * Start a relational query for a table (Drizzle-style)
+     *
+     * This method provides Drizzle-style querying with eager loading support.
+     *
+     * Usage:
+     *   // Find many with relations
+     *   $users = $db->query($users_table)
+     *       ->with(['posts' => true, 'profile' => true])
+     *       ->find_many();
+     *
+     *   // Find first with nested relations
+     *   $user = $db->query($users_table)
+     *       ->with([
+     *           'posts' => [
+     *               'with' => ['comments' => true]
+     *           ]
+     *       ])
+     *       ->where(eq($users_table->id, 1))
+     *       ->find_first();
+     *
+     *   // Find by ID
+     *   $user = $db->query($users_table)
+     *       ->with(['posts' => true])
+     *       ->find(1);
+     *
+     * @param Table $table The table to query
+     * @return TableQuery
+     */
+    public function query_table(Table $table): TableQuery
+    {
+        return $this->get_relational_builder()->query($table);
+    }
+
+    /**
+     * Find many records with optional eager loading
+     *
+     * Shorthand for: $db->query($table)->with($relations)->find_many()
+     *
+     * @param Table $table The table to query
+     * @param array $options Options: 'with', 'where', 'order_by', 'limit', 'offset', 'columns'
+     * @return array<array>
+     */
+    public function find_many(Table $table, array $options = []): array
+    {
+        $query = $this->query_table($table);
+
+        if (isset($options['columns'])) {
+            $query = $query->columns($options['columns']);
+        }
+
+        if (isset($options['where'])) {
+            $query = $query->where($options['where']);
+        }
+
+        if (isset($options['order_by'])) {
+            $order_by = is_array($options['order_by']) ? $options['order_by'] : [$options['order_by']];
+            $query = $query->order_by(...$order_by);
+        }
+
+        if (isset($options['limit'])) {
+            $query = $query->limit($options['limit']);
+        }
+
+        if (isset($options['offset'])) {
+            $query = $query->offset($options['offset']);
+        }
+
+        if (isset($options['with'])) {
+            $query = $query->with($options['with']);
+        }
+
+        return $query->find_many();
+    }
+
+    /**
+     * Find the first matching record with optional eager loading
+     *
+     * Shorthand for: $db->query($table)->with($relations)->find_first()
+     *
+     * @param Table $table The table to query
+     * @param array $options Options: 'with', 'where', 'order_by', 'columns'
+     * @return array|null
+     */
+    public function find_first(Table $table, array $options = []): ?array
+    {
+        $query = $this->query_table($table);
+
+        if (isset($options['columns'])) {
+            $query = $query->columns($options['columns']);
+        }
+
+        if (isset($options['where'])) {
+            $query = $query->where($options['where']);
+        }
+
+        if (isset($options['order_by'])) {
+            $order_by = is_array($options['order_by']) ? $options['order_by'] : [$options['order_by']];
+            $query = $query->order_by(...$order_by);
+        }
+
+        if (isset($options['with'])) {
+            $query = $query->with($options['with']);
+        }
+
+        return $query->find_first();
+    }
+
+    /**
+     * Alias for find_first()
+     *
+     * @param Table $table The table to query
+     * @param array $options Options: 'with', 'where', 'order_by', 'columns'
+     * @return array|null
+     */
+    public function find_one(Table $table, array $options = []): ?array
+    {
+        return $this->find_first($table, $options);
     }
 }

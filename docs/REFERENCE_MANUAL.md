@@ -13,15 +13,16 @@
 3. [Quick Start](#3-quick-start)
 4. [Database Connections](#4-database-connections)
 5. [Schema Definition](#5-schema-definition)
-6. [Query Builder](#6-query-builder)
-7. [Operators Reference](#7-operators-reference)
-8. [Aggregate Functions](#8-aggregate-functions)
-9. [Custom SQL with sql()](#9-custom-sql-with-sql)
-10. [Transactions](#10-transactions)
-11. [Security Considerations](#11-security-considerations)
-12. [API Reference](#12-api-reference)
-13. [Examples](#13-examples)
-14. [Troubleshooting](#14-troubleshooting)
+6. [Relations](#6-relations)
+7. [Query Builder](#7-query-builder)
+8. [Operators Reference](#8-operators-reference)
+9. [Aggregate Functions](#9-aggregate-functions)
+10. [Custom SQL with sql()](#10-custom-sql-with-sql)
+11. [Transactions](#11-transactions)
+12. [Security Considerations](#12-security-considerations)
+13. [API Reference](#13-api-reference)
+14. [Examples](#14-examples)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -285,7 +286,626 @@ if (!$db->table_exists('users')) {
 
 ---
 
-## 6. Query Builder
+## 6. Relations
+
+Italix ORM features a Drizzle-inspired relation system with explicit relation definitions, eager loading, and polymorphic support.
+
+### Import Relations Functions
+
+```php
+use function Italix\Orm\Relations\define_relations;
+```
+
+### 6.1 Defining Relations
+
+Relations are defined separately from schema using `define_relations()`. This follows Drizzle ORM's pattern of explicit relation definitions.
+
+```php
+// Define tables first
+$users = sqlite_table('users', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'name' => varchar(100)->not_null(),
+]);
+
+$profiles = sqlite_table('profiles', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'user_id' => integer()->not_null()->unique(),
+    'bio' => text(),
+]);
+
+$posts = sqlite_table('posts', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'author_id' => integer()->not_null(),
+    'title' => varchar(255)->not_null(),
+]);
+
+// Define relations
+$users_relations = define_relations($users, function($r) use ($users, $profiles, $posts) {
+    return [
+        // One-to-one: users.id -> profiles.user_id
+        'profile' => $r->one($profiles, [
+            'fields' => [$users->id],           // Source column (PK)
+            'references' => [$profiles->user_id], // Target column (FK)
+        ]),
+
+        // One-to-many: users.id -> posts.author_id
+        'posts' => $r->many($posts, [
+            'fields' => [$users->id],
+            'references' => [$posts->author_id],
+        ]),
+    ];
+});
+```
+
+### 6.2 Relation Types
+
+| Method | Type | Description |
+|--------|------|-------------|
+| `$r->one($table, $config)` | One-to-One / Many-to-One | Single related record |
+| `$r->many($table, $config)` | One-to-Many | Multiple related records |
+| `$r->one_polymorphic($config)` | Polymorphic Belongs-To | Single record from multiple possible tables |
+| `$r->many_polymorphic($table, $config)` | Polymorphic Has-Many | Multiple records with type discrimination |
+
+### 6.3 Query Methods
+
+#### query_table()
+
+Creates a relational query builder for a table:
+
+```php
+$query = $db->query_table($users);
+```
+
+#### find_many()
+
+Get multiple records, optionally with relations:
+
+```php
+// All users
+$users = $db->query_table($users)->find_many();
+
+// With conditions and relations
+$users = $db->query_table($users)
+    ->where(eq($users->is_active, true))
+    ->with(['posts' => true])
+    ->order_by(desc($users->created_at))
+    ->limit(10)
+    ->find_many();
+```
+
+#### find_first()
+
+Get first matching record:
+
+```php
+$user = $db->query_table($users)
+    ->where(eq($users->email, 'john@example.com'))
+    ->with(['profile' => true])
+    ->find_first();
+```
+
+#### find_one()
+
+Alias for `find_first()`.
+
+#### find($id)
+
+Get record by primary key:
+
+```php
+$user = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find(1);
+```
+
+### 6.4 Eager Loading with `with`
+
+The `with` clause loads related data efficiently, avoiding N+1 query problems.
+
+#### Basic Eager Loading
+
+```php
+// Load single relation
+$users = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find_many();
+
+// Load multiple relations
+$users = $db->query_table($users)
+    ->with([
+        'profile' => true,
+        'posts' => true,
+        'comments' => true,
+    ])
+    ->find_many();
+```
+
+#### Nested Relations
+
+```php
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'with' => [
+                'comments' => true,  // Load comments for each post
+                'tags' => true,      // Load tags for each post
+            ]
+        ]
+    ])
+    ->find_many();
+
+// Result structure:
+// [
+//     'id' => 1,
+//     'name' => 'John',
+//     'posts' => [
+//         [
+//             'id' => 1,
+//             'title' => 'Hello World',
+//             'comments' => [...],
+//             'tags' => [...]
+//         ]
+//     ]
+// ]
+```
+
+#### Filtered Relations
+
+```php
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'where' => eq($posts->published, true),
+            'order_by' => [desc($posts->created_at)],
+            'limit' => 5,
+        ]
+    ])
+    ->find_many();
+```
+
+#### Relation Aliases
+
+```php
+// Load 'author' relation but name it 'writer' in results
+$posts = $db->query_table($posts)
+    ->with([
+        'writer:author' => true,
+    ])
+    ->find_many();
+
+// Access: $post['writer']['name'] instead of $post['author']['name']
+```
+
+### 6.5 Many-to-Many Relations
+
+Many-to-many relations use a junction/pivot table.
+
+```php
+$tags = sqlite_table('tags', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'name' => varchar(50)->not_null(),
+]);
+
+$post_tags = sqlite_table('post_tags', [
+    'post_id' => integer()->not_null(),
+    'tag_id' => integer()->not_null(),
+]);
+
+$posts_relations = define_relations($posts, function($r) use ($posts, $tags, $post_tags) {
+    return [
+        'tags' => $r->many($tags, [
+            'fields' => [$posts->id],
+            'through' => $post_tags,              // Junction table
+            'through_fields' => [$post_tags->post_id],  // FK to source
+            'target_fields' => [$post_tags->tag_id],    // FK to target
+            'target_references' => [$tags->id],         // Target PK
+        ]),
+    ];
+});
+
+// Inverse relation: tags -> posts
+$tags_relations = define_relations($tags, function($r) use ($posts, $tags, $post_tags) {
+    return [
+        'posts' => $r->many($posts, [
+            'fields' => [$tags->id],
+            'through' => $post_tags,
+            'through_fields' => [$post_tags->tag_id],
+            'target_fields' => [$post_tags->post_id],
+            'target_references' => [$posts->id],
+        ]),
+    ];
+});
+
+// Query
+$posts = $db->query_table($posts)->with(['tags' => true])->find_many();
+```
+
+### 6.6 Polymorphic Relations
+
+Polymorphic relations allow a model to belong to multiple other model types.
+
+#### Polymorphic Belongs-To (`one_polymorphic`)
+
+When a record can belong to one of several different types:
+
+```php
+// Comments can belong to Posts OR Videos
+$comments = sqlite_table('comments', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'commentable_type' => varchar(50)->not_null(),  // 'post' or 'video'
+    'commentable_id' => integer()->not_null(),
+    'content' => text()->not_null(),
+]);
+
+$comments_relations = define_relations($comments, function($r) use ($comments, $posts, $videos) {
+    return [
+        'commentable' => $r->one_polymorphic([
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'targets' => [
+                'post' => $posts,
+                'video' => $videos,
+            ],
+        ]),
+    ];
+});
+
+// Query: Get comments with their parent (post or video)
+$comments = $db->query_table($comments)
+    ->with(['commentable' => true])
+    ->find_many();
+
+// Result:
+// [
+//     'id' => 1,
+//     'commentable_type' => 'post',
+//     'commentable_id' => 5,
+//     'content' => 'Great post!',
+//     'commentable' => ['id' => 5, 'title' => 'My Post', ...]
+// ]
+```
+
+#### Polymorphic Has-Many (`many_polymorphic`)
+
+When a record has many polymorphic children:
+
+```php
+$posts_relations = define_relations($posts, function($r) use ($posts, $comments) {
+    return [
+        'comments' => $r->many_polymorphic($comments, [
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'type_value' => 'post',  // Filter: commentable_type = 'post'
+            'references' => [$posts->id],
+        ]),
+    ];
+});
+
+$videos_relations = define_relations($videos, function($r) use ($videos, $comments) {
+    return [
+        'comments' => $r->many_polymorphic($comments, [
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'type_value' => 'video',  // Filter: commentable_type = 'video'
+            'references' => [$videos->id],
+        ]),
+    ];
+});
+
+// Query posts with their comments
+$posts = $db->query_table($posts)->with(['comments' => true])->find_many();
+```
+
+### 6.7 Shorthand Query Methods
+
+For convenience, you can use shorthand methods on the database object:
+
+```php
+// find_many with options
+$users = $db->find_many($users, [
+    'where' => eq($users->is_active, true),
+    'with' => ['posts' => true, 'profile' => true],
+    'order_by' => desc($users->created_at),
+    'limit' => 20,
+    'offset' => 0,
+]);
+
+// find_first with options
+$user = $db->find_first($users, [
+    'where' => eq($users->id, 1),
+    'with' => ['posts' => ['with' => ['comments' => true]]],
+]);
+
+// find_one (alias for find_first)
+$user = $db->find_one($users, [
+    'where' => eq($users->email, 'test@example.com'),
+]);
+```
+
+### 6.8 Relation Configuration Reference
+
+#### One / Many Relation Config
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `fields` | `array` | Source table columns (usually PK or FK) |
+| `references` | `array` | Target table columns to match against |
+| `through` | `Table` | (Many-to-Many) Junction table |
+| `through_fields` | `array` | (Many-to-Many) Junction table FK to source |
+| `target_fields` | `array` | (Many-to-Many) Junction table FK to target |
+| `target_references` | `array` | (Many-to-Many) Target table PK |
+
+#### Polymorphic One Config
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `type_column` | `Column` | Column storing the type discriminator |
+| `id_column` | `Column` | Column storing the foreign key |
+| `targets` | `array` | Map of type values to table objects |
+
+#### Polymorphic Many Config
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `type_column` | `Column` | Column storing the type discriminator |
+| `id_column` | `Column` | Column storing the foreign key |
+| `type_value` | `string` | Type discriminator value for this relation |
+| `references` | `array` | Source table columns to match against id_column |
+
+### 6.9 With Clause Options
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `true` | `bool` | Load relation with defaults |
+| `where` | `Condition` | Filter condition for related records |
+| `order_by` | `array` | Order by clauses |
+| `limit` | `int` | Maximum records to load |
+| `with` | `array` | Nested relations to load |
+
+### 6.10 Loading Strategies: Eager vs Lazy
+
+Understanding when to use eager loading versus lazy loading (manual queries) is essential for building performant applications.
+
+#### What is Eager Loading?
+
+**Eager loading** pre-fetches related data in optimized batch queries when you load the parent records. Italix ORM uses the `with` clause for eager loading.
+
+```php
+// Eager loading: 2 queries total
+$users = $db->query_table($users)
+    ->with(['posts' => true, 'profile' => true])
+    ->find_many();
+// Query 1: SELECT * FROM users
+// Query 2: SELECT * FROM posts WHERE author_id IN (1, 2, 3, ...)
+// Query 3: SELECT * FROM profiles WHERE user_id IN (1, 2, 3, ...)
+```
+
+#### What is Lazy Loading?
+
+**Lazy loading** fetches related data on-demand, when you actually access it. In Italix ORM, this means making separate queries when needed.
+
+```php
+// Lazy loading: query relations when needed
+$users = $db->query_table($users)->find_many();  // 1 query
+
+// Later, load posts for a specific user
+$userPosts = $db->query_table($posts)
+    ->where(eq($posts->author_id, $users[0]['id']))
+    ->find_many();  // 1 additional query
+```
+
+#### The N+1 Query Problem
+
+The most common performance issue with ORMs is the "N+1 problem" - loading N related records requires N+1 database queries:
+
+```php
+// PROBLEM: N+1 queries
+$users = $db->query_table($users)->find_many();  // 1 query
+
+foreach ($users as $user) {
+    // Each iteration = 1 additional query
+    $posts = $db->query_table($posts)
+        ->where(eq($posts->author_id, $user['id']))
+        ->find_many();
+
+    echo count($posts) . " posts for " . $user['name'];
+}
+// Total: 1 + N queries (if 100 users = 101 queries!)
+```
+
+**Solution: Use eager loading**
+
+```php
+// SOLUTION: 2 queries total, regardless of user count
+$users = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find_many();
+
+foreach ($users as $user) {
+    // No additional queries - posts already loaded
+    echo count($user['posts']) . " posts for " . $user['name'];
+}
+// Total: 2 queries (even with 1000 users)
+```
+
+#### When to Use Eager Loading
+
+| Use Case | Why Eager Loading |
+|----------|-------------------|
+| **List views with related data** | Prevents N+1 when iterating |
+| **API responses with nested resources** | Single round-trip for all data |
+| **Reports/exports** | Efficient bulk data retrieval |
+| **Data you know you'll access** | Reduces total query count |
+| **Templates/views iterating over relations** | Avoids query-per-row |
+
+**Example: Blog posts listing**
+
+```php
+$posts = $db->query_table($posts)
+    ->with([
+        'author' => true,           // Author name for byline
+        'category' => true,         // Category for filtering/display
+        'tags' => true,             // Tags for display
+        'comments' => [
+            'limit' => 3,           // Just preview, not all
+            'order_by' => [desc($comments->created_at)],
+        ],
+    ])
+    ->where(eq($posts->published, true))
+    ->order_by(desc($posts->created_at))
+    ->limit(20)
+    ->find_many();
+```
+
+#### When to Use Lazy Loading
+
+| Use Case | Why Lazy Loading |
+|----------|------------------|
+| **Conditional data access** | Load only if condition met |
+| **Single record views** | Overhead difference is minimal |
+| **Rarely accessed relations** | Avoid loading unused data |
+| **Very large related datasets** | Load with pagination on demand |
+| **Complex filtering on related data** | More control over the query |
+
+**Example: Conditional loading**
+
+```php
+$user = $db->query_table($users)->find($userId);
+
+// Only load activity log if user is admin viewing their own profile
+if ($isAdmin && $viewingOwnProfile) {
+    $activityLog = $db->query_table($activity_logs)
+        ->where(eq($activity_logs->user_id, $user['id']))
+        ->order_by(desc($activity_logs->created_at))
+        ->limit(50)
+        ->find_many();
+}
+```
+
+**Example: Paginated related data**
+
+```php
+$post = $db->query_table($posts)->find($postId);
+
+// Load comments with pagination (user controls page)
+$page = $_GET['comment_page'] ?? 1;
+$perPage = 20;
+
+$comments = $db->query_table($comments)
+    ->where(eq($comments->post_id, $post['id']))
+    ->order_by(desc($comments->created_at))
+    ->limit($perPage)
+    ->offset(($page - 1) * $perPage)
+    ->find_many();
+```
+
+#### Performance Comparison
+
+| Scenario | Eager Loading | Lazy Loading |
+|----------|---------------|--------------|
+| 100 users, each with posts | 2 queries | 101 queries |
+| 1 user with posts | 2 queries | 2 queries |
+| 100 users, 10% need posts | 2 queries | 11 queries |
+| 100 users, posts rarely shown | 2 queries (wasteful) | 1 query (efficient) |
+
+#### Best Practices
+
+**1. Default to eager loading for lists**
+
+```php
+// When displaying a list, eager load what you'll display
+$orders = $db->query_table($orders)
+    ->with([
+        'customer' => true,
+        'items' => ['with' => ['product' => true]],
+    ])
+    ->find_many();
+```
+
+**2. Don't over-eager**
+
+```php
+// BAD: Loading everything
+$user = $db->query_table($users)
+    ->with([
+        'posts' => true,
+        'comments' => true,
+        'likes' => true,
+        'followers' => true,
+        'following' => true,
+        'notifications' => true,
+    ])
+    ->find($id);
+
+// GOOD: Load only what the current view needs
+$user = $db->query_table($users)
+    ->with(['profile' => true])  // Only profile for header
+    ->find($id);
+```
+
+**3. Use filtered/limited relations for large datasets**
+
+```php
+// Instead of loading ALL posts (could be thousands)
+$user = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'where' => eq($posts->published, true),
+            'order_by' => [desc($posts->created_at)],
+            'limit' => 5,  // Just recent posts
+        ]
+    ])
+    ->find($id);
+```
+
+**4. Batch process with pagination**
+
+```php
+// Process large datasets in chunks
+$offset = 0;
+$batchSize = 100;
+
+do {
+    $users = $db->query_table($users)
+        ->with(['subscription' => true])
+        ->limit($batchSize)
+        ->offset($offset)
+        ->find_many();
+
+    foreach ($users as $user) {
+        processUserSubscription($user);
+    }
+
+    $offset += $batchSize;
+} while (count($users) === $batchSize);
+```
+
+**5. Profile your queries**
+
+Enable query logging to identify N+1 problems:
+
+```php
+// Count queries in development
+$queryCount = 0;
+// ... run your code ...
+// If $queryCount is unexpectedly high, you may have N+1 issues
+```
+
+#### Decision Flowchart
+
+```
+Will you iterate over parent records?
+├─ Yes → Will you access related data for each?
+│        ├─ Yes (all/most) → USE EAGER LOADING
+│        └─ No (few/conditional) → USE LAZY LOADING
+└─ No (single record) → Either approach works
+                        ├─ Known relations needed → Eager (simpler code)
+                        └─ Conditional access → Lazy (more efficient)
+```
+
+---
+
+## 7. Query Builder
 
 ### SELECT
 
@@ -420,7 +1040,7 @@ $results = $db->select([
 
 ---
 
-## 7. Operators Reference
+## 8. Operators Reference
 
 ### Import Operators
 
@@ -543,7 +1163,7 @@ $db->select([raw('COUNT(*) as total')])
 
 ---
 
-## 8. Aggregate Functions
+## 9. Aggregate Functions
 
 ```php
 use function Italix\Orm\Operators\{
@@ -573,7 +1193,7 @@ $db->select([
 
 ---
 
-## 9. Custom SQL with sql()
+## 10. Custom SQL with sql()
 
 The `sql()` method provides a safe way to write custom SQL with proper parameter binding.
 
@@ -662,7 +1282,7 @@ $results = $db->sql()
 
 ---
 
-## 10. Transactions
+## 11. Transactions
 
 ### Manual Transactions
 
@@ -698,7 +1318,7 @@ $result = $db->transaction(function($db) use ($users, $orders) {
 
 ---
 
-## 11. Security Considerations
+## 12. Security Considerations
 
 ### SQL Injection Protection
 
@@ -755,7 +1375,7 @@ php tests/SecurityTest.php
 
 ---
 
-## 12. API Reference
+## 13. API Reference
 
 ### IxOrm Class
 
@@ -779,6 +1399,33 @@ php tests/SecurityTest.php
 | `last_insert_id($name)` | `string` | Get last insert ID |
 | `get_connection()` | `PDO` | Get PDO connection |
 | `get_dialect()` | `DialectInterface` | Get dialect |
+| `query_table($table)` | `TableQuery` | Create relational query builder |
+| `find_many($table, $options)` | `array` | Shorthand: find multiple records |
+| `find_first($table, $options)` | `array\|null` | Shorthand: find first record |
+| `find_one($table, $options)` | `array\|null` | Alias for find_first |
+
+### TableQuery Class (Relations)
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `where($condition)` | `self` | Add WHERE condition |
+| `order_by(...$cols)` | `self` | Add ORDER BY |
+| `limit($n)` | `self` | Set LIMIT |
+| `offset($n)` | `self` | Set OFFSET |
+| `with($relations)` | `self` | Configure eager loading |
+| `find_many()` | `array` | Execute and fetch all |
+| `find_first()` | `array\|null` | Execute and fetch first |
+| `find_one()` | `array\|null` | Alias for find_first |
+| `find($id)` | `array\|null` | Find by primary key |
+
+### RelationBuilder Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `$r->one($table, $config)` | `One` | Define one-to-one/many-to-one |
+| `$r->many($table, $config)` | `Many` | Define one-to-many/many-to-many |
+| `$r->one_polymorphic($config)` | `PolymorphicOne` | Define polymorphic belongs-to |
+| `$r->many_polymorphic($table, $config)` | `PolymorphicMany` | Define polymorphic has-many |
 
 ### QueryBuilder Class
 
@@ -810,7 +1457,7 @@ php tests/SecurityTest.php
 
 ---
 
-## 13. Examples
+## 14. Examples
 
 ### User Authentication
 
@@ -918,7 +1565,7 @@ $results = $db->select([
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### Common Errors
 

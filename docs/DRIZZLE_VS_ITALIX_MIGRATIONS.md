@@ -1,538 +1,527 @@
-# Migration Systems Comparison: Drizzle ORM vs Italix ORM (Proposed)
+# Italix ORM: The Best of Laravel and Drizzle Worlds
 
 ## Executive Summary
 
-| Aspect | Drizzle ORM | Italix ORM (Proposed) |
-|--------|-------------|----------------------|
-| **Approach** | Schema-diff (automatic) | Migration files (manual) |
-| **Source of Truth** | TypeScript schema files | Migration files OR schema |
-| **Migration Generation** | Automatic via diffing | Manual developer writing |
-| **Rollback Support** | Limited (no down migrations) | Full up/down support |
-| **Learning Curve** | Lower for simple cases | Higher initially |
-| **Control** | Less granular | Full control |
-| **Data Migrations** | Custom migrations only | First-class support |
+Italix ORM combines the **best ideas from Laravel** (migrations, Blueprint API) and **Drizzle ORM** (relations, eager loading, type-safe queries) into a cohesive PHP 7.4+ ORM.
+
+| Feature | Inspired By | Status |
+|---------|-------------|--------|
+| **Migration System** | Laravel | ✅ Implemented |
+| **Blueprint API** | Laravel | ✅ Implemented |
+| **Schema Introspection (Pull)** | Drizzle | ✅ Implemented |
+| **Schema Push** | Drizzle | ✅ Implemented |
+| **Schema Diff** | Drizzle | ✅ Implemented |
+| **Relations with `define_relations()`** | Drizzle | ✅ Implemented |
+| **Eager Loading with `with`** | Drizzle | ✅ Implemented |
+| **Polymorphic Relations** | Laravel + Drizzle | ✅ Implemented |
+| **Multi-Dialect Support** | Both | ✅ MySQL, PostgreSQL, SQLite, Supabase |
 
 ---
 
-## 1. Architecture Overview
+## 1. Migration System (Laravel-Inspired)
 
-### Drizzle ORM Migration System
+### Why Laravel's Approach?
 
+Laravel's migration system is battle-tested and provides:
+- **Full rollback support** with `up()` and `down()` methods
+- **Data migrations** as first-class citizens
+- **Team-friendly** file-based migrations
+- **Explicit control** over every SQL statement
+
+### Implementation
+
+```php
+use Italix\Orm\Migration\Migration;
+use Italix\Orm\Migration\Schema;
+use Italix\Orm\Migration\Blueprint;
+
+class CreateUsersTable extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 100);
+            $table->string('email')->unique();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+
+            $table->index('email');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::drop_if_exists('users');
+    }
+}
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     DRIZZLE MIGRATION FLOW                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  schema.ts (Source of Truth)                                    │
-│       │                                                          │
-│       ▼                                                          │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────────────┐ │
-│  │ drizzle-kit │───▶│ JSON Snapshot │───▶│ Compare with prev  │ │
-│  │  generate   │    │  (current)    │    │ snapshot           │ │
-│  └─────────────┘    └──────────────┘    └─────────┬──────────┘ │
-│                                                    │             │
-│                                                    ▼             │
-│                                          ┌─────────────────────┐│
-│                                          │ Auto-generate SQL   ││
-│                                          │ migration.sql       ││
-│                                          └─────────────────────┘│
-│                                                                  │
-│  Alternative: drizzle-kit push (direct to DB, no SQL files)     │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
 
-### Italix ORM Migration System (Proposed)
+### CLI Commands
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     ITALIX MIGRATION FLOW                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Developer writes migration file manually                        │
-│       │                                                          │
-│       ▼                                                          │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │ class CreateUsersTable extends Migration {                   ││
-│  │     public function up(): void {                            ││
-│  │         Schema::create('users', function($t) {...});        ││
-│  │     }                                                        ││
-│  │     public function down(): void {                          ││
-│  │         Schema::drop('users');                              ││
-│  │     }                                                        ││
-│  │ }                                                            ││
-│  └─────────────────────────────────────────────────────────────┘│
-│       │                                                          │
-│       ▼                                                          │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────────────┐ │
-│  │   Migrator  │───▶│ Execute up() │───▶│ Track in DB table  │ │
-│  │   migrate   │    │ or down()    │    │ ix_migrations      │ │
-│  └─────────────┘    └──────────────┘    └────────────────────┘ │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```bash
+# Run pending migrations
+php ix migrate
+
+# Rollback last batch
+php ix migrate:rollback
+
+# Rollback N steps
+php ix migrate:rollback --steps=3
+
+# Reset all migrations
+php ix migrate:reset
+
+# Refresh (reset + migrate)
+php ix migrate:refresh
+
+# Check migration status
+php ix migrate:status
 ```
 
 ---
 
-## 2. Feature-by-Feature Comparison
+## 2. Drizzle-Inspired Features
 
-### 2.1 Migration Generation
+### 2.1 Schema Push (Direct to Database)
 
-#### Drizzle: Automatic Schema Diffing
+Like Drizzle's `drizzle-kit push`, Italix supports pushing schema changes directly to the database without migration files - perfect for rapid prototyping.
 
-```typescript
-// schema.ts - You just modify this
-export const users = pgTable("users", {
-  id: serial().primaryKey(),
-  name: text(),
-  email: text().unique(),  // ← Add this line
+```bash
+# Push schema directly to database
+php ix db:push
+
+# Push with confirmation
+php ix db:push --force
+```
+
+### 2.2 Schema Pull (Database Introspection)
+
+Like Drizzle's `drizzle-kit pull`, Italix can introspect an existing database and generate schema definitions.
+
+```bash
+# Pull schema from database
+php ix db:pull
+
+# Generate migration from existing database
+php ix db:pull --migration
+```
+
+### 2.3 Schema Diff (Auto-Suggest Migrations)
+
+Compare your schema definition with the database and auto-generate migration suggestions.
+
+```bash
+# Show differences
+php ix db:diff
+
+# Generate migration from diff
+php ix db:diff --generate
+```
+
+---
+
+## 3. Relations System (Drizzle-Inspired)
+
+### Why Drizzle's Approach?
+
+Drizzle's relation system offers:
+- **Explicit relation definitions** separate from schema
+- **Powerful eager loading** with the `with` clause
+- **Nested relations** support
+- **Relation aliases** for flexibility
+
+### 3.1 Defining Relations
+
+```php
+use function Italix\Orm\Relations\define_relations;
+
+// Define tables
+$users = sqlite_table('users', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'name' => varchar(100)->not_null(),
+    'email' => varchar(255)->not_null(),
+]);
+
+$posts = sqlite_table('posts', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'author_id' => integer()->not_null(),
+    'title' => varchar(255)->not_null(),
+]);
+
+$comments = sqlite_table('comments', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'post_id' => integer()->not_null(),
+    'user_id' => integer()->not_null(),
+    'content' => text()->not_null(),
+]);
+
+// Define relations (Drizzle-style)
+$users_relations = define_relations($users, function($r) use ($users, $posts, $comments) {
+    return [
+        // One-to-many: users.id -> posts.author_id
+        'posts' => $r->many($posts, [
+            'fields' => [$users->id],
+            'references' => [$posts->author_id],
+        ]),
+
+        // One-to-many: users.id -> comments.user_id
+        'comments' => $r->many($comments, [
+            'fields' => [$users->id],
+            'references' => [$comments->user_id],
+        ]),
+    ];
 });
 
-// Run: npx drizzle-kit generate
-// Drizzle automatically detects the change and generates:
-// migrations/0001_add_email_to_users.sql
+$posts_relations = define_relations($posts, function($r) use ($users, $posts, $comments) {
+    return [
+        // Many-to-one: posts.author_id -> users.id
+        'author' => $r->one($users, [
+            'fields' => [$posts->author_id],
+            'references' => [$users->id],
+        ]),
+
+        // One-to-many: posts.id -> comments.post_id
+        'comments' => $r->many($comments, [
+            'fields' => [$posts->id],
+            'references' => [$comments->post_id],
+        ]),
+    ];
+});
 ```
 
-**Pros:**
-- Zero effort for simple schema changes
-- No chance of human error in SQL syntax
-- Fast iteration during development
-
-**Cons:**
-- Limited control over migration content
-- Can't easily add data transformations
-- Rename detection can be imperfect (may generate DROP + CREATE instead of RENAME)
-
-#### Italix (Proposed): Manual Migration Writing
+### 3.2 Eager Loading with `with`
 
 ```php
-// migrations/2024_01_15_add_email_to_users.php
-class AddEmailToUsers extends Migration
-{
-    public function up(): void
-    {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('email', 255)->unique()->after('name');
-        });
-    }
-    
-    public function down(): void
-    {
-        Schema::table('users', function (Blueprint $table) {
-            $table->drop_column('email');
-        });
-    }
-}
+// Find users with their posts and comments
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'with' => ['comments' => true]  // Nested relations
+        ]
+    ])
+    ->find_many();
+
+// Result structure:
+// [
+//     'id' => 1,
+//     'name' => 'John',
+//     'posts' => [
+//         [
+//             'id' => 1,
+//             'title' => 'Hello World',
+//             'comments' => [
+//                 ['id' => 1, 'content' => 'Great post!'],
+//                 ['id' => 2, 'content' => 'Thanks!'],
+//             ]
+//         ]
+//     ]
+// ]
 ```
 
-**Pros:**
-- Full control over every SQL statement
-- Can include data migrations in the same file
-- Explicit rename operations
-- Down migrations for safe rollback
-
-**Cons:**
-- More work for simple changes
-- Potential for human error
-- Must keep schema and migrations in sync
-
----
-
-### 2.2 Development Workflows
-
-#### Drizzle: Multiple Workflows
-
-| Command | Use Case |
-|---------|----------|
-| `drizzle-kit push` | Rapid prototyping - push schema directly to DB |
-| `drizzle-kit generate` | Generate SQL files for review/deployment |
-| `drizzle-kit migrate` | Apply generated SQL migrations |
-| `drizzle-kit pull` | Introspect existing DB to generate schema |
-
-```bash
-# Rapid development (no SQL files)
-npx drizzle-kit push
-
-# Production workflow (with SQL files)
-npx drizzle-kit generate
-npx drizzle-kit migrate
-```
-
-#### Italix (Proposed): Single Workflow
-
-```bash
-# Create migration
-php italix make:migration add_email_to_users
-
-# Run migrations
-php italix migrate
-
-# Rollback
-php italix migrate:rollback
-```
-
-**Winner: Drizzle** - More flexibility for different development stages.
-
----
-
-### 2.3 Rollback Support
-
-#### Drizzle: No Native Rollback
-
-Drizzle does **not** generate down migrations. To rollback:
-
-1. Manually revert your schema.ts
-2. Run `drizzle-kit generate` (generates new migration)
-3. Apply the "rollback" as a forward migration
-
-```typescript
-// To "rollback" adding email, you'd:
-// 1. Remove email from schema.ts
-// 2. Generate new migration that drops the column
-```
-
-**Limitations:**
-- No atomic rollback
-- Data loss risk (DROP COLUMN loses data)
-- Complex rollbacks require manual SQL
-
-#### Italix (Proposed): Full Rollback Support
+### 3.3 Filtered and Ordered Relations
 
 ```php
-public function down(): void
-{
-    // Restore data before dropping
-    $this->sql('UPDATE users_backup SET ... FROM users');
-    
-    Schema::table('users', function (Blueprint $table) {
-        $table->drop_column('email');
-    });
-}
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'where' => eq($posts->published, true),
+            'order_by' => [desc($posts->created_at)],
+            'limit' => 5,
+        ]
+    ])
+    ->find_many();
 ```
 
-```bash
-# Rollback last batch
-php italix migrate:rollback
-
-# Rollback specific number of steps
-php italix migrate:rollback --steps=3
-
-# Rollback all
-php italix migrate:reset
-```
-
-**Winner: Italix** - Proper down migrations are critical for production safety.
-
----
-
-### 2.4 Data Migrations
-
-#### Drizzle: Limited Support
-
-Drizzle's auto-generation is **schema-only**. For data migrations:
-
-```bash
-# Generate empty migration file
-npx drizzle-kit generate --custom
-```
-
-Then manually write SQL in the generated file.
-
-#### Italix (Proposed): First-Class Support
+### 3.4 Relation Aliases
 
 ```php
-class MigrateUserStatuses extends Migration
-{
-    public function up(): void
-    {
-        // 1. Add new column
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('status')->default('active');
-        });
-        
-        // 2. Migrate data
-        $this->sql("
-            UPDATE users SET status = CASE
-                WHEN is_active = 1 AND is_verified = 1 THEN 'verified'
-                WHEN is_active = 1 THEN 'active'
-                ELSE 'inactive'
-            END
-        ");
-        
-        // 3. Drop old columns
-        Schema::table('users', function (Blueprint $table) {
-            $table->drop_column('is_active');
-            $table->drop_column('is_verified');
-        });
-    }
-    
-    public function down(): void
-    {
-        // Reverse the entire process...
-    }
-}
-```
+$posts = $db->query_table($posts)
+    ->with([
+        'writer:author' => true,  // Load 'author' relation as 'writer'
+    ])
+    ->find_many();
 
-**Winner: Italix** - Integrated data migrations are essential for real-world schema evolution.
+// Access via alias: $post['writer']['name']
+```
 
 ---
 
-### 2.5 Team Collaboration
+## 4. Many-to-Many Relations
 
-#### Drizzle: Snapshot-Based
-
-- Stores JSON snapshots of schema state
-- Compares current schema to last snapshot
-- Can have conflicts when team members modify schema simultaneously
-
-```
-drizzle/
-├── 0000_init/
-│   ├── migration.sql
-│   └── snapshot.json    ← Binary-ish, hard to review
-├── 0001_add_posts/
-│   ├── migration.sql
-│   └── snapshot.json
-```
-
-#### Italix (Proposed): File-Based
-
-- Each migration is a self-contained file
-- Easy to review in PRs
-- Merge conflicts are rare and easy to resolve
-
-```
-migrations/
-├── 2024_01_15_000001_create_users.php
-├── 2024_01_15_000002_create_posts.php   ← Easy to read
-└── 2024_01_16_000001_add_email.php
-```
-
-**Winner: Italix** - Better for code review and team collaboration.
-
----
-
-### 2.6 Database Introspection
-
-#### Drizzle: Excellent
-
-```bash
-# Pull existing database schema into TypeScript
-npx drizzle-kit pull
-```
-
-Generates complete schema.ts from your existing database. Great for:
-- Adopting Drizzle on existing projects
-- Database-first workflows
-- Keeping code in sync with DBA-managed schemas
-
-#### Italix (Proposed): Not Planned
-
-No equivalent feature proposed. Would need to:
-- Use external tools to generate initial migration
-- Manually create schema definition
-
-**Winner: Drizzle** - Essential for brownfield projects.
-
----
-
-### 2.7 Type Safety
-
-#### Drizzle: Excellent
-
-TypeScript schema provides compile-time type checking:
-
-```typescript
-// If you typo a column name, TypeScript catches it
-const user = await db.select().from(users).where(eq(users.emial, 'x'));
-//                                                      ^^^^^ Error!
-```
-
-#### Italix: Good (PHP 7.4+)
-
-PHP type declarations and IDE support:
+### Through Junction Tables
 
 ```php
-// Column object provides some type safety
-$db->select()->from($users)->where(eq($users->emial, 'x'));
-//                                         ^^^^^ IDE may warn, but no compile error
+$tags = sqlite_table('tags', [...]);
+$post_tags = sqlite_table('post_tags', [
+    'post_id' => integer()->not_null(),
+    'tag_id' => integer()->not_null(),
+]);
+
+$posts_relations = define_relations($posts, function($r) use ($posts, $tags, $post_tags) {
+    return [
+        'tags' => $r->many($tags, [
+            'fields' => [$posts->id],
+            'through' => $post_tags,
+            'through_fields' => [$post_tags->post_id],
+            'target_fields' => [$post_tags->tag_id],
+            'target_references' => [$tags->id],
+        ]),
+    ];
+});
+
+// Query
+$posts = $db->query_table($posts)
+    ->with(['tags' => true])
+    ->find_many();
 ```
 
-**Winner: Drizzle** - TypeScript's type system is more powerful.
+---
+
+## 5. Polymorphic Relations
+
+Italix supports polymorphic relations following patterns from both Laravel and Drizzle.
+
+### 5.1 Polymorphic Belongs-To (one_polymorphic)
+
+When a model can belong to multiple different model types:
+
+```php
+// Comments can belong to Posts OR Videos
+$comments = sqlite_table('comments', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'commentable_type' => varchar(50)->not_null(),  // 'post' or 'video'
+    'commentable_id' => integer()->not_null(),
+    'content' => text()->not_null(),
+]);
+
+$comments_relations = define_relations($comments, function($r) use ($posts, $videos) {
+    return [
+        'commentable' => $r->one_polymorphic([
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'targets' => [
+                'post' => $posts,
+                'video' => $videos,
+            ],
+        ]),
+    ];
+});
+
+// Query comments with their parent (regardless of type)
+$comments = $db->query_table($comments)
+    ->with(['commentable' => true])
+    ->find_many();
+```
+
+### 5.2 Polymorphic Has-Many (many_polymorphic)
+
+When a model has many of a polymorphic child:
+
+```php
+$posts_relations = define_relations($posts, function($r) use ($posts, $comments) {
+    return [
+        'comments' => $r->many_polymorphic($comments, [
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'type_value' => 'post',
+            'references' => [$posts->id],
+        ]),
+    ];
+});
+
+// Query posts with their polymorphic comments
+$posts = $db->query_table($posts)
+    ->with(['comments' => true])
+    ->find_many();
+```
+
+### 5.3 Schema.org Pattern: Multiple Polymorphic Authors
+
+For complex scenarios like schema.org's CreativeWork (multiple authors, each can be Person or Organization):
+
+```php
+// Junction table for polymorphic many-to-many with roles
+$creative_work_contributors = sqlite_table('creative_work_contributors', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'work_id' => integer()->not_null(),
+    'contributor_type' => varchar(50)->not_null(),  // 'person' or 'organization'
+    'contributor_id' => integer()->not_null(),
+    'role' => varchar(50)->not_null(),              // 'author', 'creator', 'editor'
+    'position' => integer()->default(0),             // For ordering
+]);
+
+// Relations
+$works_relations = define_relations($creative_works, function($r) use ($creative_works, $contributors) {
+    return [
+        'contributor_records' => $r->many($contributors, [
+            'fields' => [$creative_works->id],
+            'references' => [$contributors->work_id],
+        ]),
+    ];
+});
+
+$contributors_relations = define_relations($contributors, function($r) use ($contributors, $persons, $organizations) {
+    return [
+        'contributor' => $r->one_polymorphic([
+            'type_column' => $contributors->contributor_type,
+            'id_column' => $contributors->contributor_id,
+            'targets' => [
+                'person' => $persons,
+                'organization' => $organizations,
+            ],
+        ]),
+    ];
+});
+
+// Query with all contributors resolved
+$works = $db->query_table($creative_works)
+    ->with([
+        'contributor_records' => [
+            'with' => ['contributor' => true],
+            'where' => eq($contributors->role, 'author'),
+            'order_by' => [$contributors->position],
+        ]
+    ])
+    ->find_many();
+```
 
 ---
 
-## 3. Detailed Pros and Cons
+## 6. Query Methods
 
-### Drizzle ORM Migration System
+### Drizzle-Style Query API
 
-#### Pros ✅
+```php
+// find_many() - Get multiple records
+$users = $db->query_table($users)
+    ->where(eq($users->is_active, true))
+    ->order_by(desc($users->created_at))
+    ->limit(10)
+    ->with(['posts' => true])
+    ->find_many();
 
-1. **Zero-friction for simple changes** - Just edit schema.ts and generate
-2. **Multiple workflows** - push for dev, generate+migrate for prod
-3. **Database introspection** - Pull existing schemas into code
-4. **Type-safe schema** - TypeScript catches errors at compile time
-5. **Snapshot comparison** - Smart diffing reduces manual work
-6. **Modern tooling** - Great CLI with interactive prompts
-7. **No SQL knowledge needed** - For basic operations
+// find_first() / find_one() - Get single record
+$user = $db->query_table($users)
+    ->where(eq($users->email, 'john@example.com'))
+    ->with(['profile' => true])
+    ->find_first();
 
-#### Cons ❌
+// find() - Get by primary key
+$user = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find(1);
+```
 
-1. **No down migrations** - Rollback requires manual work
-2. **Limited data migration support** - Schema-only by default
-3. **Rename detection issues** - May generate DROP+CREATE instead of RENAME
-4. **Snapshot complexity** - JSON snapshots are hard to review
-5. **Less control** - Can't fine-tune generated SQL easily
-6. **Learning curve for edge cases** - Custom migrations feel like afterthought
-7. **Team conflicts** - Simultaneous schema edits can cause issues
+### Shorthand Methods
 
----
+```php
+// Shorthand for common patterns
+$users = $db->find_many($users, [
+    'where' => eq($users->is_active, true),
+    'with' => ['posts' => true],
+    'order_by' => desc($users->id),
+    'limit' => 20,
+]);
 
-### Italix ORM Migration System (Proposed)
-
-#### Pros ✅
-
-1. **Full rollback support** - Proper up/down migrations
-2. **Data migration support** - First-class, integrated
-3. **Complete control** - Write exactly what you need
-4. **Team-friendly** - Easy to review, rare conflicts
-5. **Explicit operations** - RENAME is RENAME, not DROP+CREATE
-6. **Battle-tested pattern** - Laravel/Rails/Django all use this
-7. **Transactional migrations** - Wrap in transaction when supported
-8. **Dialect-specific SQL** - Easy to handle edge cases
-
-#### Cons ❌
-
-1. **More manual work** - Must write every migration
-2. **Potential for errors** - Human-written SQL can have bugs
-3. **Schema drift risk** - Migrations and schema can get out of sync
-4. **No introspection** - Can't pull existing database
-5. **Steeper learning curve** - Must understand SQL concepts
-6. **No push workflow** - Can't quickly prototype
-7. **Verbose for simple changes** - Adding one column = full migration file
+$user = $db->find_first($users, [
+    'where' => eq($users->id, 1),
+    'with' => ['profile' => true, 'posts' => true],
+]);
+```
 
 ---
 
-## 4. Use Case Recommendations
+## 7. Multi-Dialect Support
 
-### When to Use Drizzle's Approach
+All features work across all supported databases:
 
-| Scenario | Why Drizzle Works |
-|----------|-------------------|
-| **Rapid prototyping** | `drizzle-kit push` is instant |
-| **Greenfield TypeScript projects** | Type safety from day one |
-| **Small teams / Solo developers** | Less process overhead |
-| **Schema-only changes** | Auto-generation is perfect |
-| **Adopting on existing DB** | `drizzle-kit pull` is invaluable |
+| Database | Identifier Quoting | Placeholders | RETURNING |
+|----------|-------------------|--------------|-----------|
+| MySQL | `` `table` `` | `?` | ❌ |
+| PostgreSQL | `"table"` | `$1, $2...` | ✅ |
+| SQLite | `"table"` | `?` | ✅ |
+| Supabase | `"table"` | `$1, $2...` | ✅ |
 
-### When to Use Italix's Approach
-
-| Scenario | Why Italix Works |
-|----------|------------------|
-| **Production systems** | Rollback support is critical |
-| **Complex data migrations** | First-class support |
-| **Large teams** | Better code review, fewer conflicts |
-| **Compliance requirements** | Full audit trail of changes |
-| **Multi-dialect deployments** | Fine-grained SQL control |
-| **Long-lived applications** | Years of migrations stay manageable |
+```php
+// Same code works on all databases
+$db = mysql(['host' => 'localhost', 'database' => 'myapp', ...]);
+$db = postgresql(['host' => 'localhost', 'database' => 'myapp', ...]);
+$db = sqlite('/path/to/db.sqlite');
+$db = supabase(['url' => '...', 'key' => '...']);
+```
 
 ---
 
-## 5. My Opinion: Which is Better?
+## 8. Comparison Summary
 
-### For Different Contexts:
+### What We Took from Laravel
 
-| Context | Winner | Reasoning |
-|---------|--------|-----------|
-| **Startups / MVPs** | Drizzle | Speed of iteration matters most |
-| **Enterprise / Production** | Italix | Rollback + data migrations are essential |
-| **TypeScript projects** | Drizzle | Type safety is powerful |
-| **PHP projects** | Italix | Obviously, it's PHP |
-| **Database-first teams** | Drizzle | Pull is invaluable |
-| **Code-first teams** | Tie | Both work well |
-| **Teams > 5 developers** | Italix | Better collaboration model |
-| **Solo developers** | Drizzle | Less overhead |
+| Feature | Description |
+|---------|-------------|
+| **Migration files** | Timestamped PHP files with `up()` and `down()` |
+| **Blueprint API** | Fluent table builder (`$table->string('name')`) |
+| **Rollback support** | Full up/down migration support |
+| **Data migrations** | SQL and data transformations in same file |
+| **Batch tracking** | Track migration batches for rollback |
 
-### Overall Assessment:
+### What We Took from Drizzle
 
-**Drizzle is better for:** Developer experience, rapid iteration, and TypeScript integration.
+| Feature | Description |
+|---------|-------------|
+| **`define_relations()`** | Explicit relation definitions separate from schema |
+| **`with` clause** | Declarative eager loading |
+| **Nested relations** | Load relations of relations |
+| **Relation aliases** | Rename relations in queries |
+| **`find_many()` / `find_first()`** | Drizzle-style query methods |
+| **Push/Pull/Diff** | Schema sync workflows |
 
-**Italix (proposed) is better for:** Production safety, data migrations, and team collaboration.
+### What We Added
 
-### My Recommendation:
-
-If I were building a **new startup MVP**, I'd choose **Drizzle** for its speed.
-
-If I were building a **production system that needs to run for years**, I'd choose **Italix's approach** (or Laravel Migrations) for its robustness.
-
----
-
-## 6. Suggested Improvements for Italix
-
-Based on this comparison, here are features worth considering:
-
-### High Priority
-
-1. **Schema introspection** (`pull` equivalent)
-   - Generate initial schema from existing database
-   - Critical for adoption on existing projects
-
-2. **Push mode for development**
-   - Quick sync schema to dev database without migration files
-   - Faster iteration during development
-
-3. **Auto-generation option**
-   - Compare schema definition to database
-   - Generate suggested migration (developer can edit)
-
-### Medium Priority
-
-4. **Migration squashing**
-   - Combine old migrations into single file
-   - Keeps migration folder manageable
-
-5. **Dry-run mode**
-   - Show SQL that would be executed
-   - Useful for review before production
-
-6. **Migration testing utilities**
-   - Run migrations against test database
-   - Verify up() and down() are symmetric
-
-### Lower Priority
-
-7. **Seeder integration**
-   - Separate seed files that run after migrations
-   - Useful for development/testing data
-
-8. **Schema visualization**
-   - Generate ERD from schema
-   - Documentation feature
+| Feature | Description |
+|---------|-------------|
+| **Polymorphic relations** | `one_polymorphic()`, `many_polymorphic()` |
+| **Junction table relations** | Many-to-many with `through` |
+| **Multi-dialect SQL** | Single codebase, multiple databases |
+| **Filtered relations** | `where`, `order_by`, `limit` on relations |
 
 ---
 
-## 7. Conclusion
+## 9. Conclusion
 
-| Criteria | Drizzle | Italix (Proposed) |
-|----------|---------|-------------------|
-| Developer Experience | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
-| Production Safety | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Data Migrations | ⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Team Collaboration | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Flexibility | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Adoption on Existing DBs | ⭐⭐⭐⭐⭐ | ⭐⭐ |
-| Learning Curve | ⭐⭐⭐⭐ (easier) | ⭐⭐⭐ |
+Italix ORM successfully combines:
 
-**Neither system is universally "better"** - they optimize for different things:
+1. **Laravel's robust migration system** for production-safe schema management
+2. **Drizzle's elegant relation system** for type-safe, declarative data access
+3. **Polymorphic relations** from both worlds for complex domain models
+4. **Multi-dialect support** for flexibility across database platforms
 
-- **Drizzle**: Optimizes for **developer velocity** and **TypeScript integration**
-- **Italix**: Optimizes for **production safety** and **long-term maintainability**
+This combination provides the **developer experience of Drizzle** with the **production safety of Laravel**, all in a lightweight PHP 7.4+ package.
 
-The ideal system would combine:
-- Drizzle's `push` for rapid development
-- Drizzle's `pull` for database introspection  
-- Drizzle's auto-generation as a **starting point**
-- Italix's full up/down migrations for production
-- Italix's integrated data migration support
-
-**For Italix ORM specifically**, the proposed Laravel-style migration system is the right choice for a PHP ORM targeting production use cases. However, adding optional `push` and `pull` capabilities would make it more competitive with Drizzle's developer experience.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      ITALIX ORM                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   ┌─────────────────┐         ┌─────────────────┐              │
+│   │    LARAVEL      │         │    DRIZZLE      │              │
+│   │                 │         │                 │              │
+│   │  • Migrations   │         │  • Relations    │              │
+│   │  • Blueprint    │         │  • Eager Load   │              │
+│   │  • Rollbacks    │    +    │  • with clause  │              │
+│   │  • Data Migrate │         │  • Push/Pull    │              │
+│   │  • Batch Track  │         │  • find_many()  │              │
+│   └────────┬────────┘         └────────┬────────┘              │
+│            │                           │                        │
+│            └───────────┬───────────────┘                        │
+│                        ▼                                        │
+│            ┌───────────────────────┐                           │
+│            │   ITALIX ORM          │                           │
+│            │                       │                           │
+│            │  Best of Both Worlds  │                           │
+│            │  + Polymorphic Rels   │                           │
+│            │  + Multi-Dialect      │                           │
+│            └───────────────────────┘                           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```

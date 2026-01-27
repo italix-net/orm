@@ -16,6 +16,7 @@ A lightweight, type-safe ORM for PHP with support for MySQL, PostgreSQL, SQLite,
 - 🎯 **PSR-4** - Composer autoloading
 - 📋 **Migrations** - Laravel-style migrations with full rollback support
 - ⚡ **CLI Tool (`ix`)** - Powerful command-line interface for migrations
+- 🔗 **Relations** - Drizzle-style relations with eager loading and polymorphic support
 
 ## Installation
 
@@ -519,6 +520,206 @@ $logs = sqlite_table('logs', [
     'message'    => text()->not_null(),
     'level'      => varchar(20)->default('info'),
     'created_at' => text(),
+]);
+```
+
+## Relations (Drizzle-style)
+
+Italix ORM features a Drizzle-inspired relation system with explicit relation definitions, eager loading, and polymorphic support.
+
+### Defining Relations
+
+```php
+use function Italix\Orm\Relations\define_relations;
+
+// Define tables
+$users = sqlite_table('users', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'name' => varchar(100)->not_null(),
+]);
+
+$posts = sqlite_table('posts', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'author_id' => integer()->not_null(),
+    'title' => varchar(255)->not_null(),
+]);
+
+$comments = sqlite_table('comments', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'post_id' => integer()->not_null(),
+    'user_id' => integer()->not_null(),
+    'content' => text()->not_null(),
+]);
+
+// Define relations
+$users_relations = define_relations($users, function($r) use ($users, $posts, $comments) {
+    return [
+        // One-to-many: users.id -> posts.author_id
+        'posts' => $r->many($posts, [
+            'fields' => [$users->id],
+            'references' => [$posts->author_id],
+        ]),
+        // One-to-many: users.id -> comments.user_id
+        'comments' => $r->many($comments, [
+            'fields' => [$users->id],
+            'references' => [$comments->user_id],
+        ]),
+    ];
+});
+
+$posts_relations = define_relations($posts, function($r) use ($users, $posts, $comments) {
+    return [
+        // Many-to-one: posts.author_id -> users.id
+        'author' => $r->one($users, [
+            'fields' => [$posts->author_id],
+            'references' => [$users->id],
+        ]),
+        // One-to-many: posts.id -> comments.post_id
+        'comments' => $r->many($comments, [
+            'fields' => [$posts->id],
+            'references' => [$comments->post_id],
+        ]),
+    ];
+});
+```
+
+### Query Methods with Eager Loading
+
+```php
+// find_many() - Get multiple records with relations
+$users = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find_many();
+
+// find_first() - Get first matching record
+$user = $db->query_table($users)
+    ->where(eq($users->id, 1))
+    ->with(['posts' => true, 'comments' => true])
+    ->find_first();
+
+// find() - Get by primary key
+$user = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find(1);
+
+// Nested relations
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'with' => ['comments' => true]  // Load comments for each post
+        ]
+    ])
+    ->find_many();
+```
+
+### Filtered and Ordered Relations
+
+```php
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'where' => eq($posts->published, true),
+            'order_by' => [desc($posts->created_at)],
+            'limit' => 5,
+        ]
+    ])
+    ->find_many();
+```
+
+### Relation Aliases
+
+```php
+$posts = $db->query_table($posts)
+    ->with([
+        'writer:author' => true,  // Load 'author' relation as 'writer'
+    ])
+    ->find_many();
+
+// Access via alias: $post['writer']['name']
+```
+
+### Many-to-Many Relations
+
+```php
+$tags = sqlite_table('tags', [...]);
+$post_tags = sqlite_table('post_tags', [
+    'post_id' => integer()->not_null(),
+    'tag_id' => integer()->not_null(),
+]);
+
+$posts_relations = define_relations($posts, function($r) use ($posts, $tags, $post_tags) {
+    return [
+        'tags' => $r->many($tags, [
+            'fields' => [$posts->id],
+            'through' => $post_tags,
+            'through_fields' => [$post_tags->post_id],
+            'target_fields' => [$post_tags->tag_id],
+            'target_references' => [$tags->id],
+        ]),
+    ];
+});
+
+// Query posts with tags
+$posts = $db->query_table($posts)->with(['tags' => true])->find_many();
+```
+
+### Polymorphic Relations
+
+```php
+// Comments can belong to Posts OR Videos
+$comments = sqlite_table('comments', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'commentable_type' => varchar(50)->not_null(),  // 'post' or 'video'
+    'commentable_id' => integer()->not_null(),
+    'content' => text()->not_null(),
+]);
+
+// Polymorphic "belongs to" (one_polymorphic)
+$comments_relations = define_relations($comments, function($r) use ($posts, $videos) {
+    return [
+        'commentable' => $r->one_polymorphic([
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'targets' => [
+                'post' => $posts,
+                'video' => $videos,
+            ],
+        ]),
+    ];
+});
+
+// Polymorphic "has many" (many_polymorphic)
+$posts_relations = define_relations($posts, function($r) use ($posts, $comments) {
+    return [
+        'comments' => $r->many_polymorphic($comments, [
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'type_value' => 'post',
+            'references' => [$posts->id],
+        ]),
+    ];
+});
+
+// Query with polymorphic relations
+$comments = $db->query_table($comments)
+    ->with(['commentable' => true])
+    ->find_many();
+```
+
+### Shorthand Query Methods
+
+```php
+// Shorthand for common patterns
+$users = $db->find_many($users, [
+    'where' => eq($users->is_active, true),
+    'with' => ['posts' => true],
+    'order_by' => desc($users->id),
+    'limit' => 20,
+]);
+
+$user = $db->find_first($users, [
+    'where' => eq($users->id, 1),
+    'with' => ['profile' => true, 'posts' => true],
 ]);
 ```
 

@@ -13,15 +13,16 @@
 3. [Quick Start](#3-quick-start)
 4. [Database Connections](#4-database-connections)
 5. [Schema Definition](#5-schema-definition)
-6. [Query Builder](#6-query-builder)
-7. [Operators Reference](#7-operators-reference)
-8. [Aggregate Functions](#8-aggregate-functions)
-9. [Custom SQL with sql()](#9-custom-sql-with-sql)
-10. [Transactions](#10-transactions)
-11. [Security Considerations](#11-security-considerations)
-12. [API Reference](#12-api-reference)
-13. [Examples](#13-examples)
-14. [Troubleshooting](#14-troubleshooting)
+6. [Relations](#6-relations)
+7. [Query Builder](#7-query-builder)
+8. [Operators Reference](#8-operators-reference)
+9. [Aggregate Functions](#9-aggregate-functions)
+10. [Custom SQL with sql()](#10-custom-sql-with-sql)
+11. [Transactions](#11-transactions)
+12. [Security Considerations](#12-security-considerations)
+13. [API Reference](#13-api-reference)
+14. [Examples](#14-examples)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -285,7 +286,385 @@ if (!$db->table_exists('users')) {
 
 ---
 
-## 6. Query Builder
+## 6. Relations
+
+Italix ORM features a Drizzle-inspired relation system with explicit relation definitions, eager loading, and polymorphic support.
+
+### Import Relations Functions
+
+```php
+use function Italix\Orm\Relations\define_relations;
+```
+
+### 6.1 Defining Relations
+
+Relations are defined separately from schema using `define_relations()`. This follows Drizzle ORM's pattern of explicit relation definitions.
+
+```php
+// Define tables first
+$users = sqlite_table('users', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'name' => varchar(100)->not_null(),
+]);
+
+$profiles = sqlite_table('profiles', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'user_id' => integer()->not_null()->unique(),
+    'bio' => text(),
+]);
+
+$posts = sqlite_table('posts', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'author_id' => integer()->not_null(),
+    'title' => varchar(255)->not_null(),
+]);
+
+// Define relations
+$users_relations = define_relations($users, function($r) use ($users, $profiles, $posts) {
+    return [
+        // One-to-one: users.id -> profiles.user_id
+        'profile' => $r->one($profiles, [
+            'fields' => [$users->id],           // Source column (PK)
+            'references' => [$profiles->user_id], // Target column (FK)
+        ]),
+
+        // One-to-many: users.id -> posts.author_id
+        'posts' => $r->many($posts, [
+            'fields' => [$users->id],
+            'references' => [$posts->author_id],
+        ]),
+    ];
+});
+```
+
+### 6.2 Relation Types
+
+| Method | Type | Description |
+|--------|------|-------------|
+| `$r->one($table, $config)` | One-to-One / Many-to-One | Single related record |
+| `$r->many($table, $config)` | One-to-Many | Multiple related records |
+| `$r->one_polymorphic($config)` | Polymorphic Belongs-To | Single record from multiple possible tables |
+| `$r->many_polymorphic($table, $config)` | Polymorphic Has-Many | Multiple records with type discrimination |
+
+### 6.3 Query Methods
+
+#### query_table()
+
+Creates a relational query builder for a table:
+
+```php
+$query = $db->query_table($users);
+```
+
+#### find_many()
+
+Get multiple records, optionally with relations:
+
+```php
+// All users
+$users = $db->query_table($users)->find_many();
+
+// With conditions and relations
+$users = $db->query_table($users)
+    ->where(eq($users->is_active, true))
+    ->with(['posts' => true])
+    ->order_by(desc($users->created_at))
+    ->limit(10)
+    ->find_many();
+```
+
+#### find_first()
+
+Get first matching record:
+
+```php
+$user = $db->query_table($users)
+    ->where(eq($users->email, 'john@example.com'))
+    ->with(['profile' => true])
+    ->find_first();
+```
+
+#### find_one()
+
+Alias for `find_first()`.
+
+#### find($id)
+
+Get record by primary key:
+
+```php
+$user = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find(1);
+```
+
+### 6.4 Eager Loading with `with`
+
+The `with` clause loads related data efficiently, avoiding N+1 query problems.
+
+#### Basic Eager Loading
+
+```php
+// Load single relation
+$users = $db->query_table($users)
+    ->with(['posts' => true])
+    ->find_many();
+
+// Load multiple relations
+$users = $db->query_table($users)
+    ->with([
+        'profile' => true,
+        'posts' => true,
+        'comments' => true,
+    ])
+    ->find_many();
+```
+
+#### Nested Relations
+
+```php
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'with' => [
+                'comments' => true,  // Load comments for each post
+                'tags' => true,      // Load tags for each post
+            ]
+        ]
+    ])
+    ->find_many();
+
+// Result structure:
+// [
+//     'id' => 1,
+//     'name' => 'John',
+//     'posts' => [
+//         [
+//             'id' => 1,
+//             'title' => 'Hello World',
+//             'comments' => [...],
+//             'tags' => [...]
+//         ]
+//     ]
+// ]
+```
+
+#### Filtered Relations
+
+```php
+$users = $db->query_table($users)
+    ->with([
+        'posts' => [
+            'where' => eq($posts->published, true),
+            'order_by' => [desc($posts->created_at)],
+            'limit' => 5,
+        ]
+    ])
+    ->find_many();
+```
+
+#### Relation Aliases
+
+```php
+// Load 'author' relation but name it 'writer' in results
+$posts = $db->query_table($posts)
+    ->with([
+        'writer:author' => true,
+    ])
+    ->find_many();
+
+// Access: $post['writer']['name'] instead of $post['author']['name']
+```
+
+### 6.5 Many-to-Many Relations
+
+Many-to-many relations use a junction/pivot table.
+
+```php
+$tags = sqlite_table('tags', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'name' => varchar(50)->not_null(),
+]);
+
+$post_tags = sqlite_table('post_tags', [
+    'post_id' => integer()->not_null(),
+    'tag_id' => integer()->not_null(),
+]);
+
+$posts_relations = define_relations($posts, function($r) use ($posts, $tags, $post_tags) {
+    return [
+        'tags' => $r->many($tags, [
+            'fields' => [$posts->id],
+            'through' => $post_tags,              // Junction table
+            'through_fields' => [$post_tags->post_id],  // FK to source
+            'target_fields' => [$post_tags->tag_id],    // FK to target
+            'target_references' => [$tags->id],         // Target PK
+        ]),
+    ];
+});
+
+// Inverse relation: tags -> posts
+$tags_relations = define_relations($tags, function($r) use ($posts, $tags, $post_tags) {
+    return [
+        'posts' => $r->many($posts, [
+            'fields' => [$tags->id],
+            'through' => $post_tags,
+            'through_fields' => [$post_tags->tag_id],
+            'target_fields' => [$post_tags->post_id],
+            'target_references' => [$posts->id],
+        ]),
+    ];
+});
+
+// Query
+$posts = $db->query_table($posts)->with(['tags' => true])->find_many();
+```
+
+### 6.6 Polymorphic Relations
+
+Polymorphic relations allow a model to belong to multiple other model types.
+
+#### Polymorphic Belongs-To (`one_polymorphic`)
+
+When a record can belong to one of several different types:
+
+```php
+// Comments can belong to Posts OR Videos
+$comments = sqlite_table('comments', [
+    'id' => integer()->primary_key()->auto_increment(),
+    'commentable_type' => varchar(50)->not_null(),  // 'post' or 'video'
+    'commentable_id' => integer()->not_null(),
+    'content' => text()->not_null(),
+]);
+
+$comments_relations = define_relations($comments, function($r) use ($comments, $posts, $videos) {
+    return [
+        'commentable' => $r->one_polymorphic([
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'targets' => [
+                'post' => $posts,
+                'video' => $videos,
+            ],
+        ]),
+    ];
+});
+
+// Query: Get comments with their parent (post or video)
+$comments = $db->query_table($comments)
+    ->with(['commentable' => true])
+    ->find_many();
+
+// Result:
+// [
+//     'id' => 1,
+//     'commentable_type' => 'post',
+//     'commentable_id' => 5,
+//     'content' => 'Great post!',
+//     'commentable' => ['id' => 5, 'title' => 'My Post', ...]
+// ]
+```
+
+#### Polymorphic Has-Many (`many_polymorphic`)
+
+When a record has many polymorphic children:
+
+```php
+$posts_relations = define_relations($posts, function($r) use ($posts, $comments) {
+    return [
+        'comments' => $r->many_polymorphic($comments, [
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'type_value' => 'post',  // Filter: commentable_type = 'post'
+            'references' => [$posts->id],
+        ]),
+    ];
+});
+
+$videos_relations = define_relations($videos, function($r) use ($videos, $comments) {
+    return [
+        'comments' => $r->many_polymorphic($comments, [
+            'type_column' => $comments->commentable_type,
+            'id_column' => $comments->commentable_id,
+            'type_value' => 'video',  // Filter: commentable_type = 'video'
+            'references' => [$videos->id],
+        ]),
+    ];
+});
+
+// Query posts with their comments
+$posts = $db->query_table($posts)->with(['comments' => true])->find_many();
+```
+
+### 6.7 Shorthand Query Methods
+
+For convenience, you can use shorthand methods on the database object:
+
+```php
+// find_many with options
+$users = $db->find_many($users, [
+    'where' => eq($users->is_active, true),
+    'with' => ['posts' => true, 'profile' => true],
+    'order_by' => desc($users->created_at),
+    'limit' => 20,
+    'offset' => 0,
+]);
+
+// find_first with options
+$user = $db->find_first($users, [
+    'where' => eq($users->id, 1),
+    'with' => ['posts' => ['with' => ['comments' => true]]],
+]);
+
+// find_one (alias for find_first)
+$user = $db->find_one($users, [
+    'where' => eq($users->email, 'test@example.com'),
+]);
+```
+
+### 6.8 Relation Configuration Reference
+
+#### One / Many Relation Config
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `fields` | `array` | Source table columns (usually PK or FK) |
+| `references` | `array` | Target table columns to match against |
+| `through` | `Table` | (Many-to-Many) Junction table |
+| `through_fields` | `array` | (Many-to-Many) Junction table FK to source |
+| `target_fields` | `array` | (Many-to-Many) Junction table FK to target |
+| `target_references` | `array` | (Many-to-Many) Target table PK |
+
+#### Polymorphic One Config
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `type_column` | `Column` | Column storing the type discriminator |
+| `id_column` | `Column` | Column storing the foreign key |
+| `targets` | `array` | Map of type values to table objects |
+
+#### Polymorphic Many Config
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `type_column` | `Column` | Column storing the type discriminator |
+| `id_column` | `Column` | Column storing the foreign key |
+| `type_value` | `string` | Type discriminator value for this relation |
+| `references` | `array` | Source table columns to match against id_column |
+
+### 6.9 With Clause Options
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `true` | `bool` | Load relation with defaults |
+| `where` | `Condition` | Filter condition for related records |
+| `order_by` | `array` | Order by clauses |
+| `limit` | `int` | Maximum records to load |
+| `with` | `array` | Nested relations to load |
+
+---
+
+## 7. Query Builder
 
 ### SELECT
 
@@ -420,7 +799,7 @@ $results = $db->select([
 
 ---
 
-## 7. Operators Reference
+## 8. Operators Reference
 
 ### Import Operators
 
@@ -543,7 +922,7 @@ $db->select([raw('COUNT(*) as total')])
 
 ---
 
-## 8. Aggregate Functions
+## 9. Aggregate Functions
 
 ```php
 use function Italix\Orm\Operators\{
@@ -573,7 +952,7 @@ $db->select([
 
 ---
 
-## 9. Custom SQL with sql()
+## 10. Custom SQL with sql()
 
 The `sql()` method provides a safe way to write custom SQL with proper parameter binding.
 
@@ -662,7 +1041,7 @@ $results = $db->sql()
 
 ---
 
-## 10. Transactions
+## 11. Transactions
 
 ### Manual Transactions
 
@@ -698,7 +1077,7 @@ $result = $db->transaction(function($db) use ($users, $orders) {
 
 ---
 
-## 11. Security Considerations
+## 12. Security Considerations
 
 ### SQL Injection Protection
 
@@ -755,7 +1134,7 @@ php tests/SecurityTest.php
 
 ---
 
-## 12. API Reference
+## 13. API Reference
 
 ### IxOrm Class
 
@@ -779,6 +1158,33 @@ php tests/SecurityTest.php
 | `last_insert_id($name)` | `string` | Get last insert ID |
 | `get_connection()` | `PDO` | Get PDO connection |
 | `get_dialect()` | `DialectInterface` | Get dialect |
+| `query_table($table)` | `TableQuery` | Create relational query builder |
+| `find_many($table, $options)` | `array` | Shorthand: find multiple records |
+| `find_first($table, $options)` | `array\|null` | Shorthand: find first record |
+| `find_one($table, $options)` | `array\|null` | Alias for find_first |
+
+### TableQuery Class (Relations)
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `where($condition)` | `self` | Add WHERE condition |
+| `order_by(...$cols)` | `self` | Add ORDER BY |
+| `limit($n)` | `self` | Set LIMIT |
+| `offset($n)` | `self` | Set OFFSET |
+| `with($relations)` | `self` | Configure eager loading |
+| `find_many()` | `array` | Execute and fetch all |
+| `find_first()` | `array\|null` | Execute and fetch first |
+| `find_one()` | `array\|null` | Alias for find_first |
+| `find($id)` | `array\|null` | Find by primary key |
+
+### RelationBuilder Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `$r->one($table, $config)` | `One` | Define one-to-one/many-to-one |
+| `$r->many($table, $config)` | `Many` | Define one-to-many/many-to-many |
+| `$r->one_polymorphic($config)` | `PolymorphicOne` | Define polymorphic belongs-to |
+| `$r->many_polymorphic($table, $config)` | `PolymorphicMany` | Define polymorphic has-many |
 
 ### QueryBuilder Class
 
@@ -810,7 +1216,7 @@ php tests/SecurityTest.php
 
 ---
 
-## 13. Examples
+## 14. Examples
 
 ### User Authentication
 
@@ -918,7 +1324,7 @@ $results = $db->select([
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### Common Errors
 

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../src/autoload.php';
 
 use function Italix\Orm\sqlite_memory;
 use function Italix\Orm\Schema\{sqlite_table, integer, varchar, text, timestamp, boolean, decimal};

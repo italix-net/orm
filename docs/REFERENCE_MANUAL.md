@@ -1840,6 +1840,94 @@ php tests/SecurityTest.php
 | `$r->one_polymorphic($config)` | `PolymorphicOne` | Define polymorphic belongs-to |
 | `$r->many_polymorphic($table, $config)` | `PolymorphicMany` | Define polymorphic has-many |
 
+### ActiveRow Class
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `wrap($data)` | `static` | Create instance from array (static) |
+| `wrap_many($rows)` | `array` | Wrap multiple arrays (static) |
+| `make($data)` | `static` | Create new instance (static) |
+| `to_array()` | `array` | Get data as plain array |
+| `unwrap()` | `array` | Alias for to_array() |
+| `exists()` | `bool` | Check if has primary key |
+| `is_new()` | `bool` | Check if no primary key |
+| `get_key()` | `mixed` | Get primary key value |
+| `is_dirty($key)` | `bool` | Check for unsaved changes |
+| `is_clean()` | `bool` | Check if no changes |
+| `get_dirty()` | `array` | Get changed fields |
+| `get_original($key)` | `mixed` | Get original value |
+| `sync_original()` | `self` | Mark current state as clean |
+| `fill($data)` | `self` | Mass assign data |
+| `only($keys)` | `array` | Get specific keys |
+| `except($keys)` | `array` | Get all except keys |
+| `has($key)` | `bool` | Check if key has value |
+| `get($key, $default)` | `mixed` | Get with default |
+| `with($data)` | `self` | Clone with new data |
+| `replicate()` | `self` | Clone without primary key |
+| `relation($name, $class)` | `mixed` | Get wrapped relation |
+
+### Persistable Trait Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `set_persistence($db, $table)` | `void` | Configure DB and table (static) |
+| `has_persistence()` | `bool` | Check if configured (static) |
+| `find($id, $with)` | `static\|null` | Find by primary key (static) |
+| `find_all($options)` | `array` | Find multiple (static) |
+| `find_one($options)` | `static\|null` | Find first (static) |
+| `create($data)` | `static` | Create and save (static) |
+| `upsert($attrs, $values)` | `static` | Update or create (static) |
+| `save()` | `self` | Persist changes |
+| `delete()` | `self` | Remove from database |
+| `refresh()` | `self` | Reload from database |
+| `update($data)` | `self` | Fill and save |
+
+### HasTimestamps Trait Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `touch()` | `self` | Update updated_at |
+| `get_created_at()` | `string\|null` | Get created_at value |
+| `get_updated_at()` | `string\|null` | Get updated_at value |
+| `get_created_at_datetime()` | `DateTime\|null` | Get as DateTime |
+| `get_updated_at_datetime()` | `DateTime\|null` | Get as DateTime |
+| `was_recently_created($sec)` | `bool` | Created within N seconds |
+| `was_recently_updated($sec)` | `bool` | Updated within N seconds |
+
+### SoftDeletes Trait Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `soft_delete()` | `self` | Set deleted_at timestamp |
+| `restore()` | `self` | Clear deleted_at |
+| `is_deleted()` | `bool` | Check if soft deleted |
+| `is_active()` | `bool` | Check if not deleted |
+| `get_deleted_at()` | `string\|null` | Get deleted_at value |
+| `get_deleted_at_datetime()` | `DateTime\|null` | Get as DateTime |
+| `force_delete()` | `self` | Permanently delete |
+
+### HasSlug Trait Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `get_slug()` | `string\|null` | Get slug value |
+| `set_slug($slug)` | `self` | Manually set slug |
+| `regenerate_slug()` | `self` | Regenerate from source |
+| `generate_slug($text)` | `string` | Generate slug from text |
+
+### CanBeAuthor Trait Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `display_name()` | `string` | Get display name (abstract) |
+| `author_label()` | `string` | Get author label |
+| `author_type()` | `string` | Get type identifier |
+| `citation_name()` | `string` | Get citation format |
+| `is_person()` | `bool` | Check if type is 'person' |
+| `is_organization()` | `bool` | Check if type is 'organization' |
+| `initials($count)` | `string` | Get initials |
+| `author_meta()` | `array` | Get author metadata |
+
 ### QueryBuilder Class
 
 | Method | Return | Description |

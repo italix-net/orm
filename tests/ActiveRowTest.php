@@ -45,7 +45,10 @@ class TestPostRow extends ActiveRow
 {
     use Persistable, HasTimestamps, SoftDeletes, HasSlug;
 
-    protected static $slug_source = 'title';
+    protected function get_slug_source(): string
+    {
+        return 'title';
+    }
 
     public function word_count(): int
     {

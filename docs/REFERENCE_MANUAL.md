@@ -1156,15 +1156,36 @@ $post->force_delete();
 
 ### 7.9 HasSlug Trait
 
-Automatically generate URL-friendly slugs.
+Automatically generate URL-friendly slugs. Override the getter methods to customize behavior.
 
 ```php
 class PostRow extends ActiveRow
 {
     use Persistable, HasSlug;
 
-    protected static $slug_source = 'title';  // Generate from title
-    protected static $slug_column = 'slug';   // Store in slug column
+    // Override to specify the source column (default: 'title')
+    protected function get_slug_source(): string
+    {
+        return 'title';
+    }
+
+    // Optional: Override slug column (default: 'slug')
+    protected function get_slug_column(): string
+    {
+        return 'slug';
+    }
+
+    // Optional: Regenerate slug on update (default: false)
+    protected function get_slug_on_update(): bool
+    {
+        return false;
+    }
+
+    // Optional: Maximum slug length (default: 255)
+    protected function get_slug_max_length(): int
+    {
+        return 255;
+    }
 }
 
 $post = PostRow::create(['title' => 'Hello World!']);

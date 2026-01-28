@@ -8,11 +8,15 @@ namespace Italix\Orm\ActiveRow\Traits;
  * Automatically generates URL-friendly slugs from a source field.
  * Works with the hook system - adds before_save_slug hook.
  *
+ * Override the get_slug_source() method to customize the source column:
+ *
  * @example
  * class PostRow extends ActiveRow {
  *     use Persistable, HasSlug;
  *
- *     protected static $slug_source = 'title';  // Generate from title
+ *     protected function get_slug_source(): string {
+ *         return 'title';  // Generate from title
+ *     }
  * }
  *
  * $post = PostRow::make(['title' => 'Hello World!']);
@@ -22,28 +26,48 @@ namespace Italix\Orm\ActiveRow\Traits;
 trait HasSlug
 {
     /**
-     * Column name for the slug
-     * @var string
+     * Get the column name for the slug
+     * Override this method to customize
+     *
+     * @return string
      */
-    protected static $slug_column = 'slug';
+    protected function get_slug_column(): string
+    {
+        return 'slug';
+    }
 
     /**
-     * Source column to generate slug from
-     * @var string
+     * Get the source column to generate slug from
+     * Override this method to customize
+     *
+     * @return string
      */
-    protected static $slug_source = 'title';
+    protected function get_slug_source(): string
+    {
+        return 'title';
+    }
 
     /**
      * Whether to regenerate slug on update
-     * @var bool
+     * Override this method to customize
+     *
+     * @return bool
      */
-    protected static $slug_on_update = false;
+    protected function get_slug_on_update(): bool
+    {
+        return false;
+    }
 
     /**
-     * Maximum slug length
-     * @var int
+     * Get maximum slug length
+     * Override this method to customize
+     *
+     * @return int
      */
-    protected static $slug_max_length = 255;
+    protected function get_slug_max_length(): int
+    {
+        return 255;
+    }
 
     /**
      * Hook: Generate slug before save
@@ -52,32 +76,32 @@ trait HasSlug
      */
     protected function before_save_slug(): void
     {
-        $slugColumn = static::$slug_column;
-        $sourceColumn = static::$slug_source;
+        $slug_column = $this->get_slug_column();
+        $source_column = $this->get_slug_source();
 
         // Skip if slug already set and we're not updating
-        if (!empty($this->data[$slugColumn]) && $this->exists() && !static::$slug_on_update) {
+        if (!empty($this->data[$slug_column]) && $this->exists() && !$this->get_slug_on_update()) {
             return;
         }
 
         // Skip if source is empty
-        if (empty($this->data[$sourceColumn])) {
+        if (empty($this->data[$source_column])) {
             return;
         }
 
         // Generate slug only if:
         // 1. Creating new record and slug is empty
         // 2. Source field changed and slug_on_update is true
-        $shouldGenerate = false;
+        $should_generate = false;
 
-        if (!$this->exists() && empty($this->data[$slugColumn])) {
-            $shouldGenerate = true;
-        } elseif (static::$slug_on_update && $this->is_dirty($sourceColumn)) {
-            $shouldGenerate = true;
+        if (!$this->exists() && empty($this->data[$slug_column])) {
+            $should_generate = true;
+        } elseif ($this->get_slug_on_update() && $this->is_dirty($source_column)) {
+            $should_generate = true;
         }
 
-        if ($shouldGenerate) {
-            $this->data[$slugColumn] = $this->generate_slug($this->data[$sourceColumn]);
+        if ($should_generate) {
+            $this->data[$slug_column] = $this->generate_slug($this->data[$source_column]);
         }
     }
 
@@ -105,8 +129,9 @@ trait HasSlug
         $slug = preg_replace('/-+/', '-', $slug);
 
         // Truncate if necessary
-        if (mb_strlen($slug) > static::$slug_max_length) {
-            $slug = mb_substr($slug, 0, static::$slug_max_length);
+        $max_length = $this->get_slug_max_length();
+        if (mb_strlen($slug) > $max_length) {
+            $slug = mb_substr($slug, 0, $max_length);
             $slug = rtrim($slug, '-');
         }
 
@@ -145,7 +170,7 @@ trait HasSlug
      */
     public function get_slug(): ?string
     {
-        return $this->data[static::$slug_column] ?? null;
+        return $this->data[$this->get_slug_column()] ?? null;
     }
 
     /**
@@ -156,7 +181,7 @@ trait HasSlug
      */
     public function set_slug(string $slug): self
     {
-        $this->data[static::$slug_column] = $this->generate_slug($slug);
+        $this->data[$this->get_slug_column()] = $this->generate_slug($slug);
         return $this;
     }
 
@@ -167,9 +192,9 @@ trait HasSlug
      */
     public function regenerate_slug(): self
     {
-        $sourceColumn = static::$slug_source;
-        if (!empty($this->data[$sourceColumn])) {
-            $this->data[static::$slug_column] = $this->generate_slug($this->data[$sourceColumn]);
+        $source_column = $this->get_slug_source();
+        if (!empty($this->data[$source_column])) {
+            $this->data[$this->get_slug_column()] = $this->generate_slug($this->data[$source_column]);
         }
         return $this;
     }

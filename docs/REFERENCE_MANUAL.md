@@ -14,15 +14,16 @@
 4. [Database Connections](#4-database-connections)
 5. [Schema Definition](#5-schema-definition)
 6. [Relations](#6-relations)
-7. [Query Builder](#7-query-builder)
-8. [Operators Reference](#8-operators-reference)
-9. [Aggregate Functions](#9-aggregate-functions)
-10. [Custom SQL with sql()](#10-custom-sql-with-sql)
-11. [Transactions](#11-transactions)
-12. [Security Considerations](#12-security-considerations)
-13. [API Reference](#13-api-reference)
-14. [Examples](#14-examples)
-15. [Troubleshooting](#15-troubleshooting)
+7. [ActiveRow](#7-activerow)
+8. [Query Builder](#8-query-builder)
+9. [Operators Reference](#9-operators-reference)
+10. [Aggregate Functions](#10-aggregate-functions)
+11. [Custom SQL with sql()](#11-custom-sql-with-sql)
+12. [Transactions](#12-transactions)
+13. [Security Considerations](#13-security-considerations)
+14. [API Reference](#14-api-reference)
+15. [Examples](#15-examples)
+16. [Troubleshooting](#16-troubleshooting)
 
 ---
 
@@ -905,7 +906,419 @@ Will you iterate over parent records?
 
 ---
 
-## 7. Query Builder
+## 7. ActiveRow
+
+ActiveRow provides a lightweight active record pattern where database rows become objects with both array access and custom methods.
+
+### 7.1 Overview
+
+ActiveRow bridges the gap between raw arrays and full ORM entities:
+
+- **Array-like**: Access data with `$row['field']` syntax
+- **Object-like**: Call custom methods like `$row->full_name()`
+- **Lightweight**: Minimal overhead, no magic methods for data access
+- **Composable**: Add behaviors via traits instead of inheritance
+
+### 7.2 Creating Row Classes
+
+```php
+use Italix\Orm\ActiveRow\ActiveRow;
+use Italix\Orm\ActiveRow\Traits\{Persistable, HasTimestamps, SoftDeletes};
+
+class UserRow extends ActiveRow
+{
+    use Persistable, HasTimestamps;
+
+    /**
+     * Custom method: compute full name
+     */
+    public function full_name(): string
+    {
+        return trim($this['first_name'] . ' ' . $this['last_name']);
+    }
+
+    /**
+     * Custom method: check role
+     */
+    public function is_admin(): bool
+    {
+        return $this['role'] === 'admin';
+    }
+}
+```
+
+### 7.3 Wrapping and Unwrapping
+
+#### Wrap Arrays into ActiveRow
+
+```php
+// Wrap a single array
+$data = ['id' => 1, 'name' => 'John', 'email' => 'john@example.com'];
+$user = UserRow::wrap($data);
+
+// Wrap multiple arrays
+$rows = $db->select()->from($users)->execute();
+$users = UserRow::wrap_many($rows);
+
+// Create new (no original data)
+$user = UserRow::make(['name' => 'New User']);
+```
+
+#### Unwrap Back to Arrays
+
+```php
+// Get as plain array
+$array = $user->to_array();
+
+// Alias methods
+$array = $user->unwrap();
+$array = $user->data;
+
+// JSON serialization (automatic)
+json_encode($user);  // Works directly
+```
+
+### 7.4 Array Access
+
+ActiveRow implements `ArrayAccess`, allowing array syntax:
+
+```php
+$user = UserRow::wrap(['id' => 1, 'name' => 'John']);
+
+// Read
+echo $user['name'];          // "John"
+echo $user['missing'];       // null (no error)
+
+// Write
+$user['email'] = 'john@example.com';
+
+// Check existence
+isset($user['name']);        // true
+isset($user['missing']);     // false
+
+// Unset
+unset($user['email']);
+
+// Iteration
+foreach ($user as $key => $value) {
+    echo "$key: $value\n";
+}
+```
+
+### 7.5 Dirty Tracking
+
+Track changes since the row was loaded:
+
+```php
+$user = UserRow::wrap(['id' => 1, 'name' => 'Original']);
+
+// Check clean state
+$user->is_clean();           // true
+$user->is_dirty();           // false
+
+// Make changes
+$user['name'] = 'Changed';
+
+// Check dirty state
+$user->is_dirty();           // true
+$user->is_dirty('name');     // true
+$user->is_dirty('id');       // false
+
+// Get changed fields
+$user->get_dirty();          // ['name' => 'Changed']
+
+// Get original value
+$user->get_original('name'); // 'Original'
+
+// Reset tracking
+$user->sync_original();      // Mark current state as clean
+```
+
+### 7.6 Persistable Trait
+
+Adds database persistence methods.
+
+#### Setup
+
+```php
+// Configure once at application bootstrap
+UserRow::set_persistence($db, $users_table);
+```
+
+#### CRUD Operations
+
+```php
+// Create
+$user = UserRow::create([
+    'name' => 'John',
+    'email' => 'john@example.com',
+]);
+
+// Read
+$user = UserRow::find(1);
+$user = UserRow::find(1, ['posts' => true]);  // With relations
+
+// Update
+$user['name'] = 'Jane';
+$user->save();
+
+// Or update directly
+$user->update(['name' => 'Jane', 'email' => 'jane@example.com']);
+
+// Delete
+$user->delete();
+
+// Refresh from database
+$user->refresh();
+```
+
+#### Static Finders
+
+```php
+// Find by ID
+$user = UserRow::find(1);
+
+// Find all
+$users = UserRow::find_all();
+
+// Find with conditions
+$admins = UserRow::find_all([
+    'where' => eq($users->role, 'admin'),
+    'order_by' => desc($users->created_at),
+    'limit' => 10,
+]);
+
+// Find one
+$user = UserRow::find_one([
+    'where' => eq($users->email, 'john@example.com'),
+]);
+
+// Upsert (update or create)
+$user = UserRow::upsert(
+    ['email' => 'john@example.com'],  // Match criteria
+    ['name' => 'John Doe']            // Values to set
+);
+```
+
+### 7.7 HasTimestamps Trait
+
+Automatically manages `created_at` and `updated_at` columns.
+
+```php
+class PostRow extends ActiveRow
+{
+    use Persistable, HasTimestamps;
+}
+
+$post = PostRow::create(['title' => 'Hello']);
+// created_at and updated_at are automatically set
+
+$post['title'] = 'Updated';
+$post->save();
+// updated_at is automatically updated
+
+// Manual touch
+$post->touch()->save();
+
+// Check timing
+$post->was_recently_created(60);  // Created in last 60 seconds?
+$post->was_recently_updated(60);  // Updated in last 60 seconds?
+
+// Get as DateTime
+$post->get_created_at_datetime();
+$post->get_updated_at_datetime();
+```
+
+### 7.8 SoftDeletes Trait
+
+Soft delete records instead of permanent deletion.
+
+```php
+class PostRow extends ActiveRow
+{
+    use Persistable, SoftDeletes;
+}
+
+$post = PostRow::find(1);
+
+// Soft delete
+$post->soft_delete();
+$post->is_deleted();     // true
+$post['deleted_at'];     // timestamp
+
+// Restore
+$post->restore();
+$post->is_deleted();     // false
+
+// Force delete (permanent)
+$post->force_delete();
+```
+
+### 7.9 HasSlug Trait
+
+Automatically generate URL-friendly slugs.
+
+```php
+class PostRow extends ActiveRow
+{
+    use Persistable, HasSlug;
+
+    protected static $slug_source = 'title';  // Generate from title
+    protected static $slug_column = 'slug';   // Store in slug column
+}
+
+$post = PostRow::create(['title' => 'Hello World!']);
+echo $post['slug'];  // "hello-world"
+
+// Manual slug generation
+$post->set_slug('custom-slug');
+$post->regenerate_slug();
+```
+
+### 7.10 CanBeAuthor Trait
+
+Shared interface for entities that can be authors (Person, Organization).
+
+```php
+use Italix\Orm\ActiveRow\Traits\CanBeAuthor;
+
+class PersonRow extends ActiveRow
+{
+    use CanBeAuthor;
+
+    public function display_name(): string
+    {
+        return $this['given_name'] . ' ' . $this['family_name'];
+    }
+
+    public function citation_name(): string
+    {
+        return $this['family_name'] . ', ' . substr($this['given_name'], 0, 1) . '.';
+    }
+}
+
+class OrganizationRow extends ActiveRow
+{
+    use CanBeAuthor;
+
+    public function display_name(): string
+    {
+        return $this['name'];
+    }
+}
+
+// Both can be used uniformly
+foreach ($work->authors() as $author) {
+    echo $author->display_name();    // Works for both
+    echo $author->author_type();     // "person" or "organization"
+    echo $author->citation_name();   // Formatted for citations
+    echo $author->initials();        // "JS" or "WHO"
+}
+```
+
+### 7.11 Hook System (AOP)
+
+Traits can hook into lifecycle events using naming conventions:
+
+```php
+class PostRow extends ActiveRow
+{
+    use Persistable;
+
+    // Called before save
+    protected function before_save_validate(): void
+    {
+        if (empty($this['title'])) {
+            throw new \InvalidArgumentException('Title is required');
+        }
+    }
+
+    // Called after save
+    protected function after_save_cache(): void
+    {
+        cache_forget('posts:' . $this['id']);
+    }
+}
+```
+
+Available hooks:
+- `before_save_*` / `after_save_*`
+- `before_delete_*` / `after_delete_*`
+- `after_wrap_*`
+- `after_refresh_*`
+- `before_soft_delete_*` / `after_soft_delete_*`
+- `before_restore_*` / `after_restore_*`
+
+### 7.12 Utility Methods
+
+```php
+$user = UserRow::wrap(['id' => 1, 'name' => 'John', 'email' => 'john@example.com']);
+
+// Check state
+$user->exists();             // Has primary key?
+$user->is_new();             // No primary key?
+$user->get_key();            // Get primary key value
+$user->has('name');          // Has non-null value?
+
+// Get with default
+$user->get('missing', 'default');
+
+// Filter fields
+$user->only(['name', 'email']);      // Only these keys
+$user->except(['id', 'created_at']); // All except these
+
+// Bulk assign
+$user->fill(['name' => 'Jane', 'role' => 'admin']);
+
+// Clone with modifications
+$admin = $user->with(['role' => 'admin']);
+
+// Create copy without ID
+$copy = $user->replicate();
+```
+
+### 7.13 Working with Relations
+
+Load related data as ActiveRow instances:
+
+```php
+class CreativeWorkRow extends ActiveRow
+{
+    // Map relation names to row classes
+    protected static $relation_classes = [
+        'authors' => PersonRow::class,
+    ];
+
+    // Method to get wrapped authors
+    public function authors(): array
+    {
+        return $this->relation('authors') ?? [];
+    }
+
+    // Or manually wrap polymorphic relations
+    public function polymorphic_authors(): array
+    {
+        return array_map(function($authorship) {
+            $type = $authorship['author_type'];
+            $data = $authorship['author'];
+
+            return $type === 'person'
+                ? PersonRow::wrap($data)
+                : OrganizationRow::wrap($data);
+        }, $this['authorships'] ?? []);
+    }
+}
+
+// Usage
+$work = CreativeWorkRow::wrap($dataWithRelations);
+foreach ($work->authors() as $author) {
+    echo $author->display_name();  // Author methods available
+}
+```
+
+---
+
+## 8. Query Builder
 
 ### SELECT
 
@@ -1040,7 +1453,7 @@ $results = $db->select([
 
 ---
 
-## 8. Operators Reference
+## 9. Operators Reference
 
 ### Import Operators
 
@@ -1163,7 +1576,7 @@ $db->select([raw('COUNT(*) as total')])
 
 ---
 
-## 9. Aggregate Functions
+## 10. Aggregate Functions
 
 ```php
 use function Italix\Orm\Operators\{
@@ -1193,7 +1606,7 @@ $db->select([
 
 ---
 
-## 10. Custom SQL with sql()
+## 11. Custom SQL with sql()
 
 The `sql()` method provides a safe way to write custom SQL with proper parameter binding.
 
@@ -1282,7 +1695,7 @@ $results = $db->sql()
 
 ---
 
-## 11. Transactions
+## 12. Transactions
 
 ### Manual Transactions
 
@@ -1318,7 +1731,7 @@ $result = $db->transaction(function($db) use ($users, $orders) {
 
 ---
 
-## 12. Security Considerations
+## 13. Security Considerations
 
 ### SQL Injection Protection
 
@@ -1375,7 +1788,7 @@ php tests/SecurityTest.php
 
 ---
 
-## 13. API Reference
+## 14. API Reference
 
 ### IxOrm Class
 
@@ -1457,7 +1870,7 @@ php tests/SecurityTest.php
 
 ---
 
-## 14. Examples
+## 15. Examples
 
 ### User Authentication
 
@@ -1565,7 +1978,7 @@ $results = $db->select([
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 ### Common Errors
 

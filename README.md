@@ -17,6 +17,7 @@ A lightweight, type-safe ORM for PHP with support for MySQL, PostgreSQL, SQLite,
 - 📋 **Migrations** - Laravel-style migrations with full rollback support
 - ⚡ **CLI Tool (`ix`)** - Powerful command-line interface for migrations
 - 🔗 **Relations** - Drizzle-style relations with eager loading and polymorphic support
+- 🎭 **ActiveRow** - Lightweight active record pattern with array access and custom methods
 
 ## Installation
 
@@ -842,6 +843,143 @@ if ($showComments) {
        $page++;
    } while (count($users) === 100);
    ```
+
+## ActiveRow (Lightweight Active Record)
+
+ActiveRow provides a lightweight active record pattern where row objects behave as both arrays and objects with custom methods.
+
+### Key Features
+
+- **Array Access**: Use `$row['field']` syntax for data access
+- **Custom Methods**: Add domain logic to row classes
+- **Dirty Tracking**: Track changed fields for efficient updates
+- **Traits for Composition**: Add behaviors via traits instead of inheritance
+- **Wrap/Unwrap**: Easy conversion between arrays and objects
+
+### Basic Usage
+
+```php
+use Italix\Orm\ActiveRow\ActiveRow;
+use Italix\Orm\ActiveRow\Traits\{Persistable, HasTimestamps};
+
+class UserRow extends ActiveRow
+{
+    use Persistable, HasTimestamps;
+
+    public function full_name(): string
+    {
+        return $this['first_name'] . ' ' . $this['last_name'];
+    }
+
+    public function is_admin(): bool
+    {
+        return $this['role'] === 'admin';
+    }
+}
+
+// Setup persistence (once at bootstrap)
+UserRow::set_persistence($db, $users_table);
+
+// Wrap query results
+$users = UserRow::wrap_many($db->select()->from($users)->execute());
+
+// Or use static finders
+$user = UserRow::find(1);
+$admins = UserRow::find_all(['where' => eq($users->role, 'admin')]);
+
+// Array access + custom methods
+echo $user['email'];           // Array access
+echo $user->full_name();       // Custom method
+$user['role'] = 'admin';       // Modify
+$user->save();                 // Persist
+
+// Convert back to array
+$array = $user->to_array();
+json_encode($user);            // Works directly
+```
+
+### Available Traits
+
+| Trait | Description |
+|-------|-------------|
+| `Persistable` | Adds `save()`, `delete()`, `refresh()`, static finders |
+| `HasTimestamps` | Auto-manages `created_at` and `updated_at` |
+| `SoftDeletes` | Adds `soft_delete()`, `restore()`, `is_deleted()` |
+| `HasSlug` | Auto-generates URL slugs from a source field |
+| `CanBeAuthor` | Shared interface for entities that can be authors |
+| `HasDisplayName` | Standard interface for displayable names |
+
+### Wrapping and Unwrapping
+
+```php
+// Wrap an array into ActiveRow
+$user = UserRow::wrap(['id' => 1, 'name' => 'John']);
+
+// Wrap multiple arrays
+$users = UserRow::wrap_many($arrayOfRows);
+
+// Unwrap back to plain array
+$array = $user->to_array();   // or ->unwrap() or ->data
+```
+
+### Dirty Tracking
+
+```php
+$user = UserRow::wrap(['id' => 1, 'name' => 'Original']);
+
+$user['name'] = 'Changed';
+
+$user->is_dirty();              // true
+$user->is_dirty('name');        // true
+$user->get_dirty();             // ['name' => 'Changed']
+$user->get_original('name');    // 'Original'
+
+$user->save();                  // Only updates dirty fields
+$user->is_dirty();              // false (now clean)
+```
+
+### Polymorphic Authors Example
+
+```php
+// Both Person and Organization can be authors using the CanBeAuthor trait
+
+class PersonRow extends ActiveRow
+{
+    use CanBeAuthor;
+
+    public function display_name(): string
+    {
+        return $this['given_name'] . ' ' . $this['family_name'];
+    }
+}
+
+class OrganizationRow extends ActiveRow
+{
+    use CanBeAuthor;
+
+    public function display_name(): string
+    {
+        return $this['name'];
+    }
+}
+
+// In CreativeWorkRow
+public function authors(): array
+{
+    return array_map(function($authorship) {
+        $type = $authorship['author_type'];
+        return $type === 'person'
+            ? PersonRow::wrap($authorship['author'])
+            : OrganizationRow::wrap($authorship['author']);
+    }, $this['authorships'] ?? []);
+}
+
+// Usage
+foreach ($work->authors() as $author) {
+    echo $author->display_name();     // Works for both Person and Organization
+    echo $author->author_type();      // "person" or "organization"
+}
+```
 
 ## Query Builder
 

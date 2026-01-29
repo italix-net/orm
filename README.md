@@ -3,7 +3,12 @@
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D7.4-8892BF.svg)](https://php.net/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-A lightweight, type-safe ORM for PHP with support for MySQL, PostgreSQL, SQLite, and Supabase.
+<img width="320" height="1024" alt="immagine" src="https://github.com/user-attachments/assets/024ccd7b-cdf2-4870-9300-0a5a3fcc293e" />
+
+
+A lightweight, type-safe ORM for PHP with support 
+
+for MySQL, PostgreSQL, SQLite, and Supabase.
 
 ## Features
 

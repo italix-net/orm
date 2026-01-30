@@ -268,24 +268,24 @@ trait Persistable
         $query = $db->query_table($table);
 
         if (isset($options['where'])) {
-            $query->where($options['where']);
+            $query = $query->where($options['where']);
         }
 
         if (isset($options['with'])) {
-            $query->with($options['with']);
+            $query = $query->with($options['with']);
         }
 
         if (isset($options['order_by'])) {
             $orderBy = is_array($options['order_by']) ? $options['order_by'] : [$options['order_by']];
-            $query->order_by(...$orderBy);
+            $query = $query->order_by(...$orderBy);
         }
 
         if (isset($options['limit'])) {
-            $query->limit($options['limit']);
+            $query = $query->limit($options['limit']);
         }
 
         if (isset($options['offset'])) {
-            $query->offset($options['offset']);
+            $query = $query->offset($options['offset']);
         }
 
         $rows = $query->find_many();

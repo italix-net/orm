@@ -562,9 +562,25 @@ function in_array(Column $column, array $values): InExpression
 }
 
 /**
+ * IN operator (alias for in_array)
+ */
+function in_(Column $column, array $values): InExpression
+{
+    return new InExpression($column, $values, false);
+}
+
+/**
  * NOT IN operator
  */
 function not_in_array(Column $column, array $values): InExpression
+{
+    return new InExpression($column, $values, true);
+}
+
+/**
+ * NOT IN operator (alias for not_in_array)
+ */
+function not_in_(Column $column, array $values): InExpression
 {
     return new InExpression($column, $values, true);
 }

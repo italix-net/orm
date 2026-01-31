@@ -1092,6 +1092,31 @@ $thing->is_movie();   // Dynamic: checks if type === 'Movie'
 $thing->as_book();    // Returns delegate if Book, null otherwise
 ```
 
+### N-Level Chained Delegation
+
+For deeper hierarchies (Thing → Book → TextBook), use `create_chain()`:
+
+```php
+// Create 3-level entity atomically
+$textbook = Thing::create_chain([
+    'Thing'    => ['name' => 'Calculus'],
+    'Book'     => ['isbn' => '978-1285741550', 'pages' => 1344],
+    'TextBook' => ['edition' => '8th', 'grade_level' => 'college'],
+]);
+
+// Chain traversal
+$textbook->get_chain();      // [Thing, Book, TextBook]
+$textbook->leaf();           // TextBook instance
+$textbook->chain_depth();    // 3
+
+// Methods delegate through entire chain
+$textbook->formatted_isbn(); // → Book::formatted_isbn()
+$textbook->edition();        // → TextBook::edition()
+
+// Recursive eager loading
+$all = Thing::find_with_delegates();  // Loads all levels
+```
+
 For complete documentation including Schema.org examples, polymorphic contributions, and best practices, see the [Delegated Types Guide](docs/DELEGATED_TYPES_GUIDE.md).
 
 ## Query Builder

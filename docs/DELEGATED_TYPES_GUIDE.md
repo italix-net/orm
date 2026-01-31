@@ -9,6 +9,7 @@ The Delegated Types pattern enables sophisticated type hierarchies where a base 
 - [Core Concepts](#core-concepts)
 - [Implementation Guide](#implementation-guide)
 - [API Reference](#api-reference)
+- [N-Level Chained Delegation](#n-level-chained-delegation)
 - [Schema.org Example](#schemaorg-example)
 - [Eager Loading](#eager-loading)
 - [Polymorphic Contributions](#polymorphic-contributions)
@@ -335,8 +336,244 @@ $thing->formatted_isbn(); // Calls $thing->delegate()->formatted_isbn()
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `eager_load_delegates($things)` | `array` | Batch load delegates for collection |
-| `find_with_delegates($options)` | `array` | Find things with delegates pre-loaded |
-| `find_with_delegate($id)` | `static\|null` | Find one thing with delegate pre-loaded |
+| `eager_load_delegates_recursive($items, $depth)` | `array` | Recursively load all delegate levels |
+| `find_with_delegates($options)` | `array` | Find things with delegates pre-loaded (recursive) |
+| `find_with_delegate($id, $depth)` | `static\|null` | Find one thing with full chain pre-loaded |
+
+#### N-Level Chain Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `create_chain($chain)` | `static` | Create entity with N levels atomically |
+| `update_chain($chain)` | `static` | Update all levels atomically |
+| `delete_chain()` | `static` | Delete all levels atomically |
+| `get_chain()` | `array<ActiveRow>` | Get full delegation chain as array |
+| `leaf()` | `ActiveRow` | Get the deepest delegate |
+| `get_from_chain($key)` | `mixed` | Get value from any level |
+| `chain_depth()` | `int` | Get number of levels |
+| `delegate_method_call($method, $args, &$found)` | `mixed` | Recursively search for method in chain |
+
+## N-Level Chained Delegation
+
+The DelegatedTypes trait supports arbitrary nesting depth. Each level can use `DelegatedTypes` to delegate to deeper levels.
+
+### Three-Level Example: Thing → Book → TextBook
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            things table                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│ id │ type      │ type_path                        │ name                │
+├────┼───────────┼──────────────────────────────────┼─────────────────────┤
+│ 1  │ TextBook  │ Thing/Book/TextBook              │ Calculus 101        │
+│ 2  │ AudioBook │ Thing/Book/AudioBook             │ The Hobbit          │
+└────┴───────────┴──────────────────────────────────┴─────────────────────┘
+
+┌───────────────────────────────────────────────┐
+│                 books table                    │
+├───────────────────────────────────────────────┤
+│ id │ thing_id │ isbn       │ pages │ type     │
+├────┼──────────┼────────────┼───────┼──────────┤
+│ 1  │ 1        │ 978-0...   │ 450   │ TextBook │
+│ 2  │ 2        │ 978-1...   │ 310   │ AudioBook│
+└────┴──────────┴────────────┴───────┴──────────┘
+
+┌─────────────────────────────────┐  ┌─────────────────────────────────┐
+│       textbooks table           │  │       audiobooks table          │
+├─────────────────────────────────┤  ├─────────────────────────────────┤
+│ id │ book_id │ edition │ grade │  │ id │ book_id │ duration │ narrator│
+├────┼─────────┼─────────┼───────┤  ├────┼─────────┼──────────┼─────────┤
+│ 1  │ 1       │ 5th     │ college│ │ 1  │ 2       │ 683      │ Andy S. │
+└────┴─────────┴─────────┴───────┘  └────┴─────────┴──────────┴─────────┘
+```
+
+### Setting Up N-Level Classes
+
+Each level uses the `DelegatedTypes` trait and defines only its **direct** children:
+
+```php
+// Level 1: Thing delegates to Book
+class Thing extends ActiveRow
+{
+    use Persistable, DelegatedTypes;
+
+    protected function get_delegated_types(): array
+    {
+        return [
+            'Book'      => Book::class,
+            'TextBook'  => Book::class,  // Leaf types map to intermediate
+            'AudioBook' => Book::class,
+        ];
+    }
+
+    protected function get_delegate_foreign_key(): string
+    {
+        return 'thing_id';  // FK that Book uses
+    }
+}
+
+// Level 2: Book delegates to TextBook/AudioBook
+class Book extends ActiveRow
+{
+    use Persistable, DelegatedTypes;
+
+    protected function get_delegated_types(): array
+    {
+        return [
+            'TextBook'  => TextBook::class,
+            'AudioBook' => AudioBook::class,
+        ];
+    }
+
+    protected function get_delegate_foreign_key(): string
+    {
+        return 'book_id';  // FK that TextBook/AudioBook uses
+    }
+
+    public function formatted_isbn(): string
+    {
+        return 'ISBN: ' . $this['isbn'];
+    }
+}
+
+// Level 3: Leaf nodes don't need DelegatedTypes
+class TextBook extends ActiveRow
+{
+    use Persistable;
+
+    public function edition(): string
+    {
+        return $this['edition'] ?? '1st';
+    }
+
+    public function is_college_level(): bool
+    {
+        return $this['grade_level'] === 'college';
+    }
+}
+```
+
+### Creating N-Level Entities with create_chain()
+
+The `create_chain()` method creates all levels atomically in a transaction:
+
+```php
+// Create a 3-level entity
+$textbook = Thing::create_chain([
+    'Thing'    => ['name' => 'Calculus: Early Transcendentals'],
+    'Book'     => ['isbn' => '978-1285741550', 'pages' => 1344],
+    'TextBook' => ['edition' => '8th', 'grade_level' => 'college'],
+]);
+
+// Creates:
+// 1. Thing with type='TextBook', type_path='Thing/Book/TextBook'
+// 2. Book with thing_id pointing to Thing
+// 3. TextBook with book_id pointing to Book
+
+// Works for any depth - 2 levels:
+$person = Thing::create_chain([
+    'Thing'  => ['name' => 'John Doe'],
+    'Person' => ['given_name' => 'John', 'family_name' => 'Doe'],
+]);
+
+// Or 4+ levels if needed:
+$item = Thing::create_chain([
+    'Thing'      => [...],
+    'Book'       => [...],
+    'TextBook'   => [...],
+    'MathBook'   => [...],  // If you had a 4th level
+]);
+```
+
+### Chain Traversal
+
+Navigate through the delegation chain easily:
+
+```php
+$thing = Thing::find_with_delegate(1);
+
+// Get the full chain
+$chain = $thing->get_chain();
+// Returns: [Thing, Book, TextBook]
+
+// Get the leaf (deepest delegate)
+$leaf = $thing->leaf();
+// Returns: TextBook instance
+
+// Get depth
+echo $thing->chain_depth();  // 3
+
+// Get value from anywhere in chain
+$thing->get_from_chain('name');      // From Thing
+$thing->get_from_chain('isbn');      // From Book
+$thing->get_from_chain('edition');   // From TextBook
+```
+
+### Deep Method Delegation
+
+Methods are automatically delegated through the entire chain:
+
+```php
+$thing = Thing::find_with_delegate(1);  // A TextBook
+
+// Methods are searched through the chain:
+$thing->formatted_isbn();     // → Book::formatted_isbn()
+$thing->edition();            // → TextBook::edition()
+$thing->is_college_level();   // → TextBook::is_college_level()
+
+// Magic type checks still work:
+$thing->is_type('TextBook');        // true
+$thing->is_in_hierarchy('Book');    // true (via type_path)
+```
+
+### Recursive Eager Loading
+
+Load all levels with a single call:
+
+```php
+// Loads all levels automatically (default max_depth=10)
+$things = Thing::find_with_delegates();
+
+foreach ($things as $thing) {
+    // All levels pre-loaded - no N+1 queries
+    $chain = $thing->get_chain();  // Already loaded
+}
+
+// Control depth:
+$things = Thing::find_with_delegates(['max_depth' => 1]);  // Thing → Book only
+$things = Thing::find_with_delegates(['max_depth' => 2]);  // Thing → Book → TextBook
+
+// Query efficiency:
+// For 100 TextBooks: 4 queries total
+// 1. SELECT * FROM things
+// 2. SELECT * FROM books WHERE thing_id IN (...)
+// 3. SELECT * FROM textbooks WHERE book_id IN (...)
+// 4. SELECT * FROM audiobooks WHERE book_id IN (...)
+```
+
+### Updating and Deleting Chains
+
+```php
+// Update all levels atomically
+$thing->update_chain([
+    'Thing'    => ['name' => 'Calculus (9th Edition)'],
+    'Book'     => ['pages' => 1400],
+    'TextBook' => ['edition' => '9th'],
+]);
+
+// Delete all levels (deletes from leaf to root)
+$thing->delete_chain();
+```
+
+### When to Use N-Level Delegation
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Schema.org-style deep hierarchies | Use N-level |
+| Intermediate levels have many shared attributes | Use N-level |
+| Need to query intermediate levels specifically | Use N-level |
+| Only need 2 levels | Use simpler `create_with_delegate()` |
+| Intermediate levels are purely conceptual | Use 2-level with traits for shared behavior |
 
 ## Schema.org Example
 

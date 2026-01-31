@@ -48,7 +48,8 @@
             "src/functions.php",
             "src/Schema/ColumnTypes.php",
             "src/Operators/Operators.php",
-            "src/Relations/functions.php"
+            "src/Relations/functions.php",
+            "src/ActiveRow/functions.php"
         ]
     },
     "autoload-dev": {

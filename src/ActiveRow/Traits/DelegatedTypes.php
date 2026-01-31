@@ -1116,4 +1116,170 @@ trait DelegatedTypes
 
         return $thing;
     }
+
+    // =========================================
+    // SERIALIZATION / RECONSTRUCTION
+    // =========================================
+
+    /**
+     * Convert the entity and its entire delegate chain to an array.
+     * This can be used for JSON serialization that preserves the full hierarchy.
+     *
+     * @param bool $include_transient Whether to include transient attributes
+     * @return array Structure with '_type', '_data', and '_delegate' keys
+     *
+     * @example
+     * $data = $thing->to_array_with_delegates();
+     * // Returns:
+     * // [
+     * //     '_type' => 'Thing',
+     * //     '_class' => 'App\Models\Thing',
+     * //     '_data' => ['id' => 1, 'name' => 'Calculus', 'type' => 'TextBook', ...],
+     * //     '_delegate' => [
+     * //         '_type' => 'Book',
+     * //         '_class' => 'App\Models\Book',
+     * //         '_data' => ['id' => 1, 'isbn' => '...', ...],
+     * //         '_delegate' => [
+     * //             '_type' => 'TextBook',
+     * //             '_class' => 'App\Models\TextBook',
+     * //             '_data' => ['id' => 1, 'edition' => '5th', ...],
+     * //             '_delegate' => null
+     * //         ]
+     * //     ]
+     * // ]
+     */
+    public function to_array_with_delegates(bool $include_transient = false): array
+    {
+        $result = [
+            '_type' => $this->type_name() ?: (new \ReflectionClass($this))->getShortName(),
+            '_class' => static::class,
+            '_data' => $include_transient ? $this->to_array() : $this->get_persistent_data(),
+            '_delegate' => null,
+        ];
+
+        $delegate = $this->delegate();
+        if ($delegate !== null) {
+            if (method_exists($delegate, 'to_array_with_delegates')) {
+                $result['_delegate'] = $delegate->to_array_with_delegates($include_transient);
+            } else {
+                // Delegate doesn't use DelegatedTypes, just serialize its data
+                $result['_delegate'] = [
+                    '_type' => (new \ReflectionClass($delegate))->getShortName(),
+                    '_class' => get_class($delegate),
+                    '_data' => $include_transient ? $delegate->to_array() : $delegate->get_persistent_data(),
+                    '_delegate' => null,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Convert to JSON with full delegate chain.
+     *
+     * @param bool $include_transient Whether to include transient attributes
+     * @param int $flags JSON encoding flags
+     * @return string JSON string
+     */
+    public function to_json_with_delegates(bool $include_transient = false, int $flags = 0): string
+    {
+        return json_encode($this->to_array_with_delegates($include_transient), $flags);
+    }
+
+    /**
+     * Reconstruct an entity and its delegate chain from serialized data.
+     * Note: This creates in-memory objects only - they are NOT saved to database.
+     * The objects will have exists() = true if they have an 'id' in their data.
+     *
+     * @param array $data The serialized data from to_array_with_delegates()
+     * @return static|null The reconstructed entity with delegates attached
+     *
+     * @example
+     * // Serialize on Server A
+     * $json = $thing->to_json_with_delegates();
+     *
+     * // Reconstruct on Server B (after setting up persistence)
+     * $data = json_decode($json, true);
+     * $thing = Thing::from_serialized($data);
+     *
+     * // The object is now usable (read-only until saved)
+     * echo $thing->name;
+     * echo $thing->delegate()->isbn;
+     */
+    public static function from_serialized(array $data): ?static
+    {
+        if (!isset($data['_class']) || !isset($data['_data'])) {
+            return null;
+        }
+
+        $class = $data['_class'];
+
+        // Security: Verify the class exists and is a valid ActiveRow
+        if (!class_exists($class) || !is_subclass_of($class, ActiveRow::class)) {
+            // Fall back to static class if provided class is invalid
+            $class = static::class;
+        }
+
+        // Create the entity
+        $entity = $class::wrap($data['_data']);
+
+        // Recursively reconstruct delegate
+        if (!empty($data['_delegate'])) {
+            $delegate = static::reconstruct_delegate($data['_delegate']);
+            if ($delegate !== null && method_exists($entity, 'set_delegate')) {
+                $entity->set_delegate($delegate);
+            }
+        }
+
+        return $entity;
+    }
+
+    /**
+     * Reconstruct a delegate from serialized data.
+     *
+     * @param array $data Delegate data
+     * @return ActiveRow|null
+     */
+    protected static function reconstruct_delegate(array $data): ?ActiveRow
+    {
+        if (!isset($data['_class']) || !isset($data['_data'])) {
+            return null;
+        }
+
+        $class = $data['_class'];
+
+        // Security: Verify the class exists and is a valid ActiveRow
+        if (!class_exists($class) || !is_subclass_of($class, ActiveRow::class)) {
+            return null;
+        }
+
+        $delegate = $class::wrap($data['_data']);
+
+        // Recursively reconstruct nested delegates
+        if (!empty($data['_delegate'])) {
+            $nested = static::reconstruct_delegate($data['_delegate']);
+            if ($nested !== null && method_exists($delegate, 'set_delegate')) {
+                $delegate->set_delegate($nested);
+            }
+        }
+
+        return $delegate;
+    }
+
+    /**
+     * Create from JSON string with delegates.
+     *
+     * @param string $json JSON string from to_json_with_delegates()
+     * @return static|null
+     */
+    public static function from_json(string $json): ?static
+    {
+        $data = json_decode($json, true);
+        if ($data === null) {
+            return null;
+        }
+
+        return static::from_serialized($data);
+    }
 }

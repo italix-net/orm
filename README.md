@@ -23,6 +23,7 @@ for MySQL, PostgreSQL, SQLite, and Supabase.
 - ⚡ **CLI Tool (`ix`)** - Powerful command-line interface for migrations
 - 🔗 **Relations** - Drizzle-style relations with eager loading and polymorphic support
 - 🎭 **ActiveRow** - Lightweight active record pattern with array access and custom methods
+- 🏛️ **Delegated Types** - Schema.org-style type hierarchies with efficient querying
 
 ## Installation
 
@@ -985,6 +986,143 @@ foreach ($work->authors() as $author) {
     echo $author->author_type();      // "person" or "organization"
 }
 ```
+
+## Delegated Types (Schema.org-style Hierarchies)
+
+The Delegated Types pattern enables sophisticated type hierarchies where a base class delegates behavior to specialized classes stored in separate tables. Ideal for Schema.org-style hierarchies (Thing → CreativeWork → Book), content management systems, and polymorphic entity modeling.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        things table                              │
+├─────────────────────────────────────────────────────────────────┤
+│ id │ type    │ name          │ is_creative_work │ is_agent     │
+├────┼─────────┼───────────────┼──────────────────┼──────────────┤
+│ 1  │ Book    │ Design Pat... │ true             │ false        │
+│ 2  │ Person  │ Erich Gamma   │ false            │ true         │
+└────┴─────────┴───────────────┴──────────────────┴──────────────┘
+
+┌─────────────────────────────────┐   ┌──────────────────────────┐
+│        books table              │   │     persons table        │
+├─────────────────────────────────┤   ├──────────────────────────┤
+│ id │ thing_id │ isbn  │ pages  │   │ id │ thing_id │ given_name│
+├────┼──────────┼───────┼────────┤   ├────┼──────────┼───────────┤
+│ 1  │ 1        │ 978...│ 416    │   │ 1  │ 2        │ Erich     │
+└────┴──────────┴───────┴────────┘   └────┴──────────┴───────────┘
+```
+
+### Basic Usage
+
+```php
+use Italix\Orm\ActiveRow\ActiveRow;
+use Italix\Orm\ActiveRow\Traits\{Persistable, DelegatedTypes};
+
+class Thing extends ActiveRow
+{
+    use Persistable, DelegatedTypes;
+
+    protected function get_delegated_types(): array
+    {
+        return [
+            'Book'   => Book::class,
+            'Movie'  => Movie::class,
+            'Person' => Person::class,
+        ];
+    }
+}
+
+// Create entities atomically (thing + delegate in transaction)
+$book = Thing::create_with_delegate('Book',
+    ['name' => 'Design Patterns'],
+    ['isbn' => '978-0201633610', 'number_of_pages' => 416]
+);
+
+$author = Thing::create_with_delegate('Person',
+    ['name' => 'Erich Gamma'],
+    ['given_name' => 'Erich', 'family_name' => 'Gamma']
+);
+
+// Type checking
+$book->is_book();           // true
+$book->is_type('Book');     // true
+$book->is_creative_work();  // true (via hierarchy flag)
+
+// Access delegate
+$delegate = $book->delegate();
+echo $delegate->pages();        // 416
+echo $delegate->formatted_isbn(); // 978-0-201-63361-0
+
+// Method delegation (automatic forwarding)
+echo $book->pages();            // Works directly - delegates to Book::pages()
+```
+
+### Eager Loading
+
+```php
+// Load all things with their delegates pre-loaded (prevents N+1 queries)
+$things = Thing::find_with_delegates();
+
+foreach ($things as $thing) {
+    // Delegates already loaded - no additional queries
+    echo $thing->delegate()->specific_method();
+}
+
+// Query by type
+$books = Thing::find_by_type('Book');
+$creative_works = Thing::find_creative_works();
+$agents = Thing::find_agents();
+```
+
+### Atomic Operations
+
+```php
+// Update thing and delegate together
+$book->update_with_delegate(
+    ['name' => 'Design Patterns (2nd Ed)'],
+    ['number_of_pages' => 450]
+);
+
+// Delete thing and delegate together
+$book->delete_with_delegate();
+```
+
+### Dynamic Type Methods
+
+The `DelegatedTypes` trait provides magic methods for type checking and access:
+
+```php
+$thing->is_book();    // Dynamic: checks if type === 'Book'
+$thing->is_movie();   // Dynamic: checks if type === 'Movie'
+$thing->as_book();    // Returns delegate if Book, null otherwise
+```
+
+### N-Level Chained Delegation
+
+For deeper hierarchies (Thing → Book → TextBook), use `create_chain()`:
+
+```php
+// Create 3-level entity atomically
+$textbook = Thing::create_chain([
+    'Thing'    => ['name' => 'Calculus'],
+    'Book'     => ['isbn' => '978-1285741550', 'pages' => 1344],
+    'TextBook' => ['edition' => '8th', 'grade_level' => 'college'],
+]);
+
+// Chain traversal
+$textbook->get_chain();      // [Thing, Book, TextBook]
+$textbook->leaf();           // TextBook instance
+$textbook->chain_depth();    // 3
+
+// Methods delegate through entire chain
+$textbook->formatted_isbn(); // → Book::formatted_isbn()
+$textbook->edition();        // → TextBook::edition()
+
+// Recursive eager loading
+$all = Thing::find_with_delegates();  // Loads all levels
+```
+
+For complete documentation including Schema.org examples, polymorphic contributions, and best practices, see the [Delegated Types Guide](docs/DELEGATED_TYPES_GUIDE.md).
 
 ## Query Builder
 

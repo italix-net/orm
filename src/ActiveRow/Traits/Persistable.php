@@ -29,16 +29,16 @@ use function Italix\Orm\Operators\eq;
 trait Persistable
 {
     /**
-     * Database connection
-     * @var IxOrm|null
+     * Registry of database connections by class name
+     * @var array<string, IxOrm>
      */
-    protected static $db = null;
+    private static array $db_registry = [];
 
     /**
-     * Table definition
-     * @var Table|null
+     * Registry of table definitions by class name
+     * @var array<string, Table>
      */
-    protected static $table = null;
+    private static array $table_registry = [];
 
     /**
      * Set up persistence for this row class
@@ -49,8 +49,8 @@ trait Persistable
      */
     public static function set_persistence(IxOrm $db, Table $table): void
     {
-        static::$db = $db;
-        static::$table = $table;
+        self::$db_registry[static::class] = $db;
+        self::$table_registry[static::class] = $table;
     }
 
     /**
@@ -61,13 +61,13 @@ trait Persistable
      */
     public static function get_db(): IxOrm
     {
-        if (static::$db === null) {
+        if (!isset(self::$db_registry[static::class])) {
             throw new \RuntimeException(
                 'Persistence not configured for ' . static::class . '. ' .
                 'Call ' . static::class . '::set_persistence($db, $table) first.'
             );
         }
-        return static::$db;
+        return self::$db_registry[static::class];
     }
 
     /**
@@ -78,13 +78,13 @@ trait Persistable
      */
     public static function get_table(): Table
     {
-        if (static::$table === null) {
+        if (!isset(self::$table_registry[static::class])) {
             throw new \RuntimeException(
                 'Persistence not configured for ' . static::class . '. ' .
                 'Call ' . static::class . '::set_persistence($db, $table) first.'
             );
         }
-        return static::$table;
+        return self::$table_registry[static::class];
     }
 
     /**
@@ -94,7 +94,7 @@ trait Persistable
      */
     public static function has_persistence(): bool
     {
-        return static::$db !== null && static::$table !== null;
+        return isset(self::$db_registry[static::class]) && isset(self::$table_registry[static::class]);
     }
 
     /**
@@ -268,24 +268,24 @@ trait Persistable
         $query = $db->query_table($table);
 
         if (isset($options['where'])) {
-            $query->where($options['where']);
+            $query = $query->where($options['where']);
         }
 
         if (isset($options['with'])) {
-            $query->with($options['with']);
+            $query = $query->with($options['with']);
         }
 
         if (isset($options['order_by'])) {
             $orderBy = is_array($options['order_by']) ? $options['order_by'] : [$options['order_by']];
-            $query->order_by(...$orderBy);
+            $query = $query->order_by(...$orderBy);
         }
 
         if (isset($options['limit'])) {
-            $query->limit($options['limit']);
+            $query = $query->limit($options['limit']);
         }
 
         if (isset($options['offset'])) {
-            $query->offset($options['offset']);
+            $query = $query->offset($options['offset']);
         }
 
         $rows = $query->find_many();

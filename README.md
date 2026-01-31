@@ -939,6 +939,59 @@ $user->save();                  // Only updates dirty fields
 $user->is_dirty();              // false (now clean)
 ```
 
+### set() and get() Methods
+
+For a fluent API, use `set()` and `get()`:
+
+```php
+// Chained setting
+$user = UserRow::make()
+    ->set('first_name', 'Andrea')
+    ->set('last_name', 'Rossi')
+    ->set('email', 'andrea@example.com');
+
+// Get with optional default
+$name = $user->get('first_name');           // 'Andrea'
+$role = $user->get('role', 'guest');        // 'guest' (default)
+```
+
+### Transient Attributes (Dot-Prefixed)
+
+Transient attributes are temporary, in-memory values that are **not persisted** to the database. They're identified by a dot (`.`) prefix.
+
+```php
+$user = UserRow::find(1);
+
+// Set transient data (won't be saved to database)
+$user['.session_id'] = session_id();
+$user['.cached_permissions'] = ['read', 'write'];
+$user->set('.request_timestamp', time());
+
+// Access transient data
+echo $user['.session_id'];
+echo $user->get('.cached_permissions');
+
+// Transient data is excluded from:
+// - Database saves (INSERT/UPDATE)
+// - Dirty tracking
+// - JSON serialization (by default)
+
+$user->save();  // Only saves persistent fields
+
+// Get data subsets
+$user->get_persistent_data();   // Only database fields
+$user->get_transient_data();    // Only dot-prefixed fields
+$user->to_array(false);         // Exclude transient from output
+```
+
+Use cases for transient attributes:
+- Caching computed values
+- Storing request-specific context
+- Temporary UI state
+- Avoiding repeated expensive calculations
+
+For complete documentation, see the [ActiveRow Guide](docs/ACTIVE_ROW_GUIDE.md).
+
 ### Polymorphic Authors Example
 
 ```php

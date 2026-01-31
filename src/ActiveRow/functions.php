@@ -1,23 +1,13 @@
 <?php
 
 /**
- * ActiveRow functions and autoloading
+ * ActiveRow helper functions
  *
- * This file ensures all ActiveRow classes and traits are loaded.
+ * These functions provide convenient wrappers for working with ActiveRow instances.
+ * Classes and traits are autoloaded via PSR-4 in composer.json.
  */
 
 namespace Italix\Orm\ActiveRow;
-
-// Load base class
-require_once __DIR__ . '/ActiveRow.php';
-
-// Load traits
-require_once __DIR__ . '/Traits/Persistable.php';
-require_once __DIR__ . '/Traits/HasTimestamps.php';
-require_once __DIR__ . '/Traits/SoftDeletes.php';
-require_once __DIR__ . '/Traits/HasDisplayName.php';
-require_once __DIR__ . '/Traits/CanBeAuthor.php';
-require_once __DIR__ . '/Traits/HasSlug.php';
 
 /**
  * Helper function to wrap an array of results into ActiveRow instances

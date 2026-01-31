@@ -57,6 +57,7 @@ class DelegatedTypesTestRunner
         $this->test_eager_loading();
         $this->test_atomic_operations();
         $this->test_queries();
+        $this->test_serialization();
 
         $this->teardown();
         $this->print_summary();
@@ -381,6 +382,60 @@ class DelegatedTypesTestRunner
             }
         }
         $this->assert('find_by_type(Book) returns only books', $all_are_books);
+
+        echo "\n";
+    }
+
+    private function test_serialization(): void
+    {
+        echo "Serialization / Reconstruction\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create a book with delegate
+        $book = Thing::create_with_delegate('Book',
+            ['name' => 'Serialization Test', 'description' => 'A test book'],
+            ['isbn' => '978-1111111111', 'number_of_pages' => 200]
+        );
+
+        // Test to_array_with_delegates
+        $serialized = $book->to_array_with_delegates();
+        $this->assert('to_array_with_delegates() returns array', is_array($serialized));
+        $this->assert('Serialized has _type key', isset($serialized['_type']));
+        $this->assert('Serialized has _class key', isset($serialized['_class']));
+        $this->assert('Serialized has _data key', isset($serialized['_data']));
+        $this->assert('Serialized has _delegate key', array_key_exists('_delegate', $serialized));
+        $this->assert('Serialized _data contains name', $serialized['_data']['name'] === 'Serialization Test');
+        $this->assert('Serialized _delegate has Book data', isset($serialized['_delegate']['_data']['isbn']));
+        $this->assert('Delegate data contains ISBN', $serialized['_delegate']['_data']['isbn'] === '978-1111111111');
+
+        // Test to_json_with_delegates
+        $json = $book->to_json_with_delegates();
+        $this->assert('to_json_with_delegates() returns valid JSON', json_decode($json) !== null);
+
+        // Test from_serialized (reconstruction)
+        $reconstructed = Thing::from_serialized($serialized);
+        $this->assert('from_serialized() returns Thing', $reconstructed instanceof Thing);
+        $this->assert('Reconstructed has same name', $reconstructed['name'] === 'Serialization Test');
+        $this->assert('Reconstructed has delegate', $reconstructed->delegate() !== null);
+        $this->assert('Reconstructed delegate has ISBN', $reconstructed->delegate()['isbn'] === '978-1111111111');
+
+        // Test from_json
+        $from_json = Thing::from_json($json);
+        $this->assert('from_json() returns Thing', $from_json instanceof Thing);
+        $this->assert('from_json() data matches', $from_json['name'] === 'Serialization Test');
+
+        // Test round-trip (serialize -> deserialize -> same data)
+        $original_data = $book->to_array_with_delegates();
+        $reconstructed_data = $reconstructed->to_array_with_delegates();
+        // Remove IDs since reconstructed won't have real DB IDs in comparison
+        unset($original_data['_data']['id']);
+        unset($reconstructed_data['_data']['id']);
+        unset($original_data['_delegate']['_data']['id']);
+        unset($reconstructed_data['_delegate']['_data']['id']);
+        $this->assert('Round-trip preserves data structure',
+            $original_data['_data']['name'] === $reconstructed_data['_data']['name'] &&
+            $original_data['_delegate']['_data']['isbn'] === $reconstructed_data['_delegate']['_data']['isbn']
+        );
 
         echo "\n";
     }

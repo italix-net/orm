@@ -9,6 +9,7 @@ The Delegated Types pattern enables sophisticated type hierarchies where a base 
 - [Core Concepts](#core-concepts)
 - [Implementation Guide](#implementation-guide)
 - [API Reference](#api-reference)
+- [Serialization and Reconstruction](#serialization-and-reconstruction)
 - [N-Level Chained Delegation](#n-level-chained-delegation)
 - [Schema.org Example](#schemaorg-example)
 - [Eager Loading](#eager-loading)
@@ -352,6 +353,139 @@ $thing->formatted_isbn(); // Calls $thing->delegate()->formatted_isbn()
 | `get_from_chain($key)` | `mixed` | Get value from any level |
 | `chain_depth()` | `int` | Get number of levels |
 | `delegate_method_call($method, $args, &$found)` | `mixed` | Recursively search for method in chain |
+| `to_array_with_delegates($include_transient)` | `array` | Serialize entity with full delegate chain |
+| `to_json_with_delegates($include_transient, $flags)` | `string` | Convert to JSON with delegates |
+| `from_serialized($data)` | `static\|null` | Reconstruct entity from serialized data |
+| `from_json($json)` | `static\|null` | Reconstruct entity from JSON string |
+
+## Serialization and Reconstruction
+
+When you need to transfer entities across servers, cache them, or store them in session data, simple `json_encode()` won't include the delegate chain. DelegatedTypes provides methods for full serialization and reconstruction.
+
+### The Problem with Standard JSON
+
+```php
+$book = Thing::find_with_delegate(1);
+
+// Standard JSON only includes base entity data
+$json = json_encode($book);
+// {"id":1,"type":"Book","name":"Design Patterns",...}
+// Missing: delegate data (ISBN, pages, etc.)
+```
+
+### Full Serialization with Delegates
+
+```php
+// Serialize the entire chain
+$data = $book->to_array_with_delegates();
+// Returns:
+// [
+//     '_type' => 'Book',
+//     '_class' => 'App\Models\Thing',
+//     '_data' => ['id' => 1, 'name' => 'Design Patterns', 'type' => 'Book', ...],
+//     '_delegate' => [
+//         '_type' => 'Book',
+//         '_class' => 'App\Models\Book',
+//         '_data' => ['id' => 1, 'isbn' => '978-0201633610', 'pages' => 416, ...],
+//         '_delegate' => null
+//     ]
+// ]
+
+// Or as JSON string
+$json = $book->to_json_with_delegates();
+```
+
+### Reconstruction on Another Server
+
+```php
+// Server A: Serialize
+$json = $thing->to_json_with_delegates();
+send_to_queue($json);
+
+// Server B: Reconstruct
+$data = json_decode(receive_from_queue(), true);
+$thing = Thing::from_serialized($data);
+
+// Or directly from JSON
+$thing = Thing::from_json($json);
+
+// The object is fully usable
+echo $thing['name'];                    // Works
+echo $thing->delegate()['isbn'];        // Works
+echo $thing->formatted_isbn();          // Method delegation works
+```
+
+### N-Level Chain Serialization
+
+Serialization works with any depth of delegation:
+
+```php
+// Three-level chain
+$textbook = Thing::create_chain([
+    'Thing'    => ['name' => 'Calculus'],
+    'Book'     => ['isbn' => '978-1234567890'],
+    'TextBook' => ['edition' => '5th'],
+]);
+
+$data = $textbook->to_array_with_delegates();
+// [
+//     '_type' => 'TextBook',
+//     '_class' => 'App\Models\Thing',
+//     '_data' => [...],
+//     '_delegate' => [
+//         '_type' => 'Book',
+//         '_class' => 'App\Models\Book',
+//         '_data' => [...],
+//         '_delegate' => [
+//             '_type' => 'TextBook',
+//             '_class' => 'App\Models\TextBook',
+//             '_data' => ['edition' => '5th', ...],
+//             '_delegate' => null
+//         ]
+//     ]
+// ]
+
+// Reconstruct with full chain
+$reconstructed = Thing::from_serialized($data);
+echo $reconstructed->edition();  // '5th' - deep delegation works
+```
+
+### Transient Attributes
+
+By default, transient (dot-prefixed) attributes are excluded from serialization:
+
+```php
+$book['.cached_score'] = 95;  // Transient attribute
+
+// Default: exclude transient
+$data = $book->to_array_with_delegates();
+// '.cached_score' not included
+
+// Include transient
+$data = $book->to_array_with_delegates(true);
+// '.cached_score' is included
+```
+
+### Security Considerations
+
+When reconstructing from external data:
+
+1. **Class validation**: `from_serialized()` validates that classes exist and extend `ActiveRow`
+2. **No auto-save**: Reconstructed objects are in-memory only; call `save()` explicitly if needed
+3. **Untrusted sources**: Be cautious with data from untrusted sources; validate before use
+
+```php
+// Safe: Class is validated
+$thing = Thing::from_json($untrusted_json);
+if ($thing === null) {
+    // Invalid data
+}
+
+// Reconstructed object has exists() based on presence of 'id'
+if ($thing->exists()) {
+    // Has an ID, but NOT guaranteed to exist in YOUR database
+}
+```
 
 ## N-Level Chained Delegation
 

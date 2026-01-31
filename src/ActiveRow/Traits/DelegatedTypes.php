@@ -8,45 +8,102 @@ use function Italix\Orm\Operators\eq;
 use function Italix\Orm\Operators\in_;
 
 /**
+ * Get all traits used by a class, including traits of parent classes and traits of traits.
+ *
+ * @param string $class
+ * @return array<string>
+ */
+function class_uses_recursive(string $class): array
+{
+    $results = [];
+
+    // Get traits from the class and all its parents
+    foreach (array_merge([$class], class_parents($class) ?: []) as $class_name) {
+        $results = array_merge($results, class_uses($class_name) ?: []);
+    }
+
+    // Get traits from traits (recursive)
+    $traits_to_check = $results;
+    while (!empty($traits_to_check)) {
+        $trait = array_pop($traits_to_check);
+        $trait_traits = class_uses($trait) ?: [];
+        foreach ($trait_traits as $trait_trait) {
+            if (!in_array($trait_trait, $results, true)) {
+                $results[] = $trait_trait;
+                $traits_to_check[] = $trait_trait;
+            }
+        }
+    }
+
+    return array_unique($results);
+}
+
+/**
  * Trait DelegatedTypes
  *
- * Implements the Delegated Types pattern (inspired by Rails).
- * Allows a "superclass" record to delegate behavior and attributes
- * to type-specific "subclass" records stored in separate tables.
+ * Implements the Delegated Types pattern (inspired by Rails) with support
+ * for N-level delegation chains. Allows a "superclass" record to delegate
+ * behavior and attributes to type-specific "subclass" records stored in
+ * separate tables, with support for arbitrary nesting depth.
  *
  * This pattern is ideal for:
- * - Schema.org-style hierarchies (Thing → CreativeWork → Book)
+ * - Schema.org-style hierarchies (Thing → CreativeWork → Book → TextBook)
  * - Polymorphic content systems (Entry → Message|Comment|Photo)
  * - Any scenario requiring efficient queries across related types
  *
- * @example
+ * Features:
+ * - N-level chained delegation (Thing → Book → TextBook → ...)
+ * - Atomic creation/update/delete across all levels
+ * - Recursive eager loading with depth control
+ * - Deep method delegation through the entire chain
+ * - Chain traversal helpers (get_chain, leaf, get_from_chain)
+ *
+ * @example Two-level delegation
  * class Thing extends ActiveRow {
  *     use Persistable, DelegatedTypes;
  *
  *     protected function get_delegated_types(): array {
  *         return [
  *             'Book'   => Book::class,
- *             'Movie'  => Movie::class,
  *             'Person' => Person::class,
  *         ];
  *     }
  * }
  *
- * // Create a book with its delegate
- * $thing = Thing::create_with_delegate('Book', [
- *     'name' => 'Design Patterns',
- * ], [
- *     'isbn' => '978-0201633610',
- *     'number_of_pages' => 416,
+ * // Create with two levels
+ * $thing = Thing::create_with_delegate('Book',
+ *     ['name' => 'Design Patterns'],
+ *     ['isbn' => '978-0201633610']
+ * );
+ *
+ * @example N-level delegation (3+ levels)
+ * class Book extends ActiveRow {
+ *     use Persistable, DelegatedTypes;
+ *
+ *     protected function get_delegated_types(): array {
+ *         return [
+ *             'TextBook'  => TextBook::class,
+ *             'AudioBook' => AudioBook::class,
+ *         ];
+ *     }
+ * }
+ *
+ * // Create with three levels using create_chain()
+ * $thing = Thing::create_chain([
+ *     'Thing'    => ['name' => 'Calculus'],
+ *     'Book'     => ['isbn' => '978-1234567890'],
+ *     'TextBook' => ['edition' => '5th', 'grade_level' => 'college'],
  * ]);
  *
- * // Access delegate
- * $book = $thing->delegate();  // Returns Book instance
- * echo $book['isbn'];
+ * // Access any level
+ * $thing->delegate();                    // Book
+ * $thing->delegate()->delegate();        // TextBook
+ * $thing->leaf();                        // TextBook (deepest)
+ * $thing->get_chain();                   // [Thing, Book, TextBook]
  *
- * // Type checking
- * $thing->is_book();    // true
- * $thing->is_movie();   // false
+ * // Methods delegate through the entire chain
+ * $thing->formatted_isbn();              // → Book::formatted_isbn()
+ * $thing->edition();                     // → TextBook::edition()
  */
 trait DelegatedTypes
 {
@@ -265,14 +322,16 @@ trait DelegatedTypes
             return null;
         }
 
-        // Delegate method calls to the delegate object
-        $delegate = $this->delegate();
-        if ($delegate !== null && method_exists($delegate, $method)) {
-            return $delegate->$method(...$args);
+        // Deep method delegation through the entire chain
+        $found = false;
+        $result = $this->delegate_method_call($method, $args, $found);
+
+        if ($found) {
+            return $result;
         }
 
         throw new \BadMethodCallException(
-            sprintf('Method %s::%s does not exist', static::class, $method)
+            sprintf('Method %s::%s does not exist in delegation chain', static::class, $method)
         );
     }
 
@@ -286,6 +345,40 @@ trait DelegatedTypes
     protected function method_to_type(string $suffix): string
     {
         return str_replace('_', '', ucwords($suffix, '_'));
+    }
+
+    /**
+     * Recursively search for a method in the delegation chain.
+     * This enables deep method delegation where a method call on Thing
+     * can be handled by TextBook (through Book).
+     *
+     * @param string $method Method name to find
+     * @param array $args Arguments to pass
+     * @param bool &$found Set to true if method was found and called
+     * @return mixed The result of the method call
+     */
+    public function delegate_method_call(string $method, array $args, bool &$found = false): mixed
+    {
+        $delegate = $this->delegate();
+
+        if ($delegate === null) {
+            $found = false;
+            return null;
+        }
+
+        // Check if delegate has this method directly
+        if (method_exists($delegate, $method)) {
+            $found = true;
+            return $delegate->$method(...$args);
+        }
+
+        // If delegate also uses DelegatedTypes, recurse deeper
+        if (method_exists($delegate, 'delegate_method_call')) {
+            return $delegate->delegate_method_call($method, $args, $found);
+        }
+
+        $found = false;
+        return null;
     }
 
     // =========================================
@@ -391,11 +484,428 @@ trait DelegatedTypes
     }
 
     // =========================================
+    // N-LEVEL CHAIN OPERATIONS
+    // =========================================
+
+    /**
+     * Create an entity with any depth of delegates atomically.
+     * Each key in the chain array represents a level in the hierarchy.
+     *
+     * @param array $chain Associative array: ['TypeName' => [...data...], ...]
+     *                     Keys should be in order from root to leaf type.
+     * @return static The root entity with all delegates created and cached
+     * @throws \InvalidArgumentException If chain is empty or types are invalid
+     *
+     * @example
+     * // Three-level creation
+     * $textbook = Thing::create_chain([
+     *     'Thing'    => ['name' => 'Calculus', 'description' => '...'],
+     *     'Book'     => ['isbn' => '978-1234567890', 'number_of_pages' => 500],
+     *     'TextBook' => ['edition' => '5th', 'grade_level' => 'college'],
+     * ]);
+     *
+     * // Two-level still works
+     * $person = Thing::create_chain([
+     *     'Thing'  => ['name' => 'John Doe'],
+     *     'Person' => ['given_name' => 'John', 'family_name' => 'Doe'],
+     * ]);
+     */
+    public static function create_chain(array $chain): static
+    {
+        if (empty($chain)) {
+            throw new \InvalidArgumentException('Chain cannot be empty');
+        }
+
+        $types = array_keys($chain);
+        if (count($types) < 2) {
+            throw new \InvalidArgumentException('Chain must have at least 2 levels (root + delegate)');
+        }
+
+        $db = static::get_db();
+
+        return $db->transaction(function () use ($chain, $types) {
+            $leaf_type = end($types);
+            $type_path = implode('/', $types);
+
+            // Create root entity
+            $root_type = reset($types);
+            $root_data = $chain[$root_type];
+
+            // Get instance for configuration
+            $instance = new static([]);
+            $type_column = $instance->get_type_column();
+            $type_path_column = $instance->get_type_path_column();
+
+            // Set type info on root
+            $root_data[$type_column] = $leaf_type;
+            if ($type_path_column !== null) {
+                $root_data[$type_path_column] = $type_path;
+            }
+
+            $root = static::create($root_data);
+
+            // Track parent for each level
+            $parent = $root;
+            $remaining_types = array_slice($types, 1);  // Remove root type
+
+            foreach ($remaining_types as $index => $type_name) {
+                $delegate_class = static::resolve_delegate_class_in_chain($parent, $type_name, $leaf_type);
+
+                if ($delegate_class === null) {
+                    throw new \InvalidArgumentException("Cannot resolve delegate class for type: {$type_name}");
+                }
+
+                $delegate_data = $chain[$type_name];
+
+                // Add foreign key to parent - use parent's FK definition
+                $fk = $parent->get_delegate_foreign_key();
+
+                // Use parent's ID as FK value
+                $delegate_data[$fk] = $parent['id'];
+
+                // If delegate also uses DelegatedTypes, set its type column
+                if (static::uses_delegated_types($delegate_class)) {
+                    $delegate_instance = new $delegate_class([]);
+                    $delegate_type_column = $delegate_instance->get_type_column();
+                    $delegate_data[$delegate_type_column] = $leaf_type;
+                }
+
+                $delegate = $delegate_class::create($delegate_data);
+
+                // Cache delegate on parent
+                if (method_exists($parent, 'set_delegate')) {
+                    $parent->set_delegate($delegate);
+                }
+
+                // Move to next level
+                $parent = $delegate;
+            }
+
+            return $root;
+        });
+    }
+
+    /**
+     * Resolve the delegate class for a type in the chain.
+     * Searches through the delegation hierarchy to find the correct class.
+     *
+     * @param ActiveRow $parent The parent entity
+     * @param string $type_name The type name to resolve
+     * @param string $leaf_type The final leaf type
+     * @return class-string<ActiveRow>|null
+     */
+    protected static function resolve_delegate_class_in_chain(
+        ActiveRow $parent,
+        string $type_name,
+        string $leaf_type
+    ): ?string {
+        $types = static::get_types_from_instance($parent);
+        if ($types === null) {
+            return null;
+        }
+
+        // Direct match for this type
+        if (isset($types[$type_name])) {
+            return $types[$type_name];
+        }
+
+        // If searching for a deeper type, find which immediate child leads to it
+        foreach ($types as $child_type => $child_class) {
+            // Check if this child type eventually leads to our target
+            if ($child_type === $leaf_type) {
+                return $child_class;
+            }
+
+            // Check if child class has DelegatedTypes that includes our target
+            $child_types = static::get_types_from_class($child_class);
+            if ($child_types !== null) {
+                if (isset($child_types[$type_name]) || isset($child_types[$leaf_type])) {
+                    return $child_class;
+                }
+
+                // Recursive search for deeper hierarchies
+                if (static::type_exists_in_hierarchy($child_class, $leaf_type)) {
+                    return $child_class;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get delegated types from an instance using reflection to access protected method.
+     *
+     * @param ActiveRow $instance
+     * @return array<string, class-string>|null
+     */
+    protected static function get_types_from_instance(ActiveRow $instance): ?array
+    {
+        if (!static::uses_delegated_types($instance::class)) {
+            return null;
+        }
+
+        try {
+            $reflection = new \ReflectionMethod($instance, 'get_delegated_types');
+            $reflection->setAccessible(true);
+            return $reflection->invoke($instance);
+        } catch (\ReflectionException $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get delegated types from a class name using reflection.
+     *
+     * @param string $class
+     * @return array<string, class-string>|null
+     */
+    protected static function get_types_from_class(string $class): ?array
+    {
+        if (!static::uses_delegated_types($class)) {
+            return null;
+        }
+
+        try {
+            $instance = new $class([]);
+            $reflection = new \ReflectionMethod($instance, 'get_delegated_types');
+            $reflection->setAccessible(true);
+            return $reflection->invoke($instance);
+        } catch (\ReflectionException $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Check if a class uses the DelegatedTypes trait.
+     *
+     * @param string $class
+     * @return bool
+     */
+    protected static function uses_delegated_types(string $class): bool
+    {
+        $traits = \Italix\Orm\ActiveRow\Traits\class_uses_recursive($class);
+        return in_array(DelegatedTypes::class, $traits, true);
+    }
+
+    /**
+     * Check if a type exists anywhere in a class's delegation hierarchy
+     *
+     * @param string $class The class to search from
+     * @param string $type_name The type to find
+     * @param int $max_depth Maximum search depth
+     * @return bool
+     */
+    protected static function type_exists_in_hierarchy(
+        string $class,
+        string $type_name,
+        int $max_depth = 10
+    ): bool {
+        if ($max_depth <= 0) {
+            return false;
+        }
+
+        $types = static::get_types_from_class($class);
+        if ($types === null) {
+            return false;
+        }
+
+        if (isset($types[$type_name])) {
+            return true;
+        }
+
+        foreach ($types as $child_class) {
+            if (static::type_exists_in_hierarchy($child_class, $type_name, $max_depth - 1)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Update the entire delegation chain atomically.
+     *
+     * @param array $chain Associative array: ['TypeName' => [...data...], ...]
+     * @return static
+     *
+     * @example
+     * $thing->update_chain([
+     *     'Thing'    => ['name' => 'Updated Name'],
+     *     'Book'     => ['number_of_pages' => 450],
+     *     'TextBook' => ['edition' => '6th'],
+     * ]);
+     */
+    public function update_chain(array $chain): static
+    {
+        $db = static::get_db();
+
+        return $db->transaction(function () use ($chain) {
+            $current = $this;
+            $level = 0;
+            $types = array_keys($chain);
+
+            foreach ($chain as $type_name => $data) {
+                if (empty($data)) {
+                    // Skip to next level
+                    if ($level > 0 && method_exists($current, 'delegate')) {
+                        $current = $current->delegate();
+                    }
+                    $level++;
+                    continue;
+                }
+
+                if ($level === 0) {
+                    // Update root
+                    $this->update($data);
+                } else {
+                    // Update delegate at this level
+                    if ($current !== null) {
+                        $current->update($data);
+                    }
+                }
+
+                // Move to next level
+                if (method_exists($current, 'delegate')) {
+                    $next = $current->delegate();
+                    if ($next !== null) {
+                        $current = $next;
+                    }
+                }
+                $level++;
+            }
+
+            return $this;
+        });
+    }
+
+    /**
+     * Delete the entire delegation chain atomically.
+     * Deletes from leaf to root to respect foreign key constraints.
+     *
+     * @return static
+     */
+    public function delete_chain(): static
+    {
+        $db = static::get_db();
+
+        return $db->transaction(function () {
+            // Get the full chain
+            $chain = $this->get_chain();
+
+            // Delete in reverse order (leaf first)
+            $reversed = array_reverse($chain);
+            foreach ($reversed as $entity) {
+                $entity->delete();
+            }
+
+            return $this;
+        });
+    }
+
+    // =========================================
+    // CHAIN TRAVERSAL
+    // =========================================
+
+    /**
+     * Get the full delegation chain as an array.
+     * Returns all entities from this level to the deepest delegate.
+     *
+     * @return array<ActiveRow>
+     *
+     * @example
+     * $thing = Thing::find_with_delegates(...);
+     * $chain = $thing->get_chain();
+     * // Returns: [Thing, Book, TextBook]
+     */
+    public function get_chain(): array
+    {
+        $chain = [$this];
+        $current = $this;
+
+        while (true) {
+            if (!method_exists($current, 'delegate')) {
+                break;
+            }
+
+            $delegate = $current->delegate();
+            if ($delegate === null) {
+                break;
+            }
+
+            $chain[] = $delegate;
+            $current = $delegate;
+        }
+
+        return $chain;
+    }
+
+    /**
+     * Get the leaf delegate (deepest level in the chain).
+     *
+     * @return ActiveRow The deepest delegate, or $this if no delegates
+     *
+     * @example
+     * $thing->leaf();  // Returns TextBook for Thing→Book→TextBook chain
+     */
+    public function leaf(): ActiveRow
+    {
+        $chain = $this->get_chain();
+        return end($chain) ?: $this;
+    }
+
+    /**
+     * Get a value from anywhere in the delegation chain.
+     * Searches from this level through all delegates.
+     *
+     * @param string $key The key/column to find
+     * @return mixed The value, or null if not found
+     *
+     * @example
+     * $thing->get_from_chain('isbn');      // From Book level
+     * $thing->get_from_chain('edition');   // From TextBook level
+     */
+    public function get_from_chain(string $key): mixed
+    {
+        // Check self first
+        if (isset($this[$key]) && $this[$key] !== null) {
+            return $this[$key];
+        }
+
+        // Search delegation chain
+        $current = $this;
+        while (method_exists($current, 'delegate')) {
+            $delegate = $current->delegate();
+            if ($delegate === null) {
+                break;
+            }
+
+            if (isset($delegate[$key]) && $delegate[$key] !== null) {
+                return $delegate[$key];
+            }
+
+            $current = $delegate;
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the depth of the delegation chain.
+     *
+     * @return int Number of levels (1 = no delegates, 2 = one delegate, etc.)
+     */
+    public function chain_depth(): int
+    {
+        return count($this->get_chain());
+    }
+
+    // =========================================
     // EAGER LOADING
     // =========================================
 
     /**
-     * Eager load delegates for a collection of things
+     * Eager load delegates for a collection of things (single level).
      * Groups by type for efficient batch queries.
      *
      * @param array<static> $things
@@ -422,10 +932,15 @@ trait DelegatedTypes
         // Load delegates for each type in batch
         foreach ($by_type as $type => $type_things) {
             if (!isset($types[$type])) {
-                continue;
+                // Type might be a deeper leaf type - find the intermediate
+                $delegate_class = static::find_delegate_class_for_leaf($types, $type);
+                if ($delegate_class === null) {
+                    continue;
+                }
+            } else {
+                $delegate_class = $types[$type];
             }
 
-            $delegate_class = $types[$type];
             $ids = array_map(fn($t) => $t['id'], $type_things);
 
             $table = $delegate_class::get_table();
@@ -451,32 +966,153 @@ trait DelegatedTypes
     }
 
     /**
-     * Find things with their delegates eagerly loaded
+     * Find the delegate class that handles a leaf type.
+     * Used when the type column contains a deeper leaf type (e.g., "TextBook")
+     * but we need to find the immediate delegate class (e.g., Book::class).
      *
-     * @param array $options Query options (where, order_by, limit, offset)
-     * @return array<static>
+     * @param array $types The delegated types mapping
+     * @param string $leaf_type The leaf type name
+     * @return class-string<ActiveRow>|null
      */
-    public static function find_with_delegates(array $options = []): array
+    protected static function find_delegate_class_for_leaf(array $types, string $leaf_type): ?string
     {
-        $things = static::find_all($options);
-        return static::eager_load_delegates($things);
+        foreach ($types as $type_name => $class) {
+            if ($type_name === $leaf_type) {
+                return $class;
+            }
+
+            // Check if this class has DelegatedTypes that includes our leaf
+            $sub_types = static::get_types_from_class($class);
+            if ($sub_types !== null) {
+                if (isset($sub_types[$leaf_type])) {
+                    return $class;
+                }
+
+                // Recursive check for deeper hierarchies
+                if (static::type_exists_in_hierarchy($class, $leaf_type)) {
+                    return $class;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
-     * Find one thing with its delegate eagerly loaded
+     * Recursively eager load delegates for a collection to any depth.
+     * Automatically continues loading until no more delegates are found.
+     *
+     * @param array<ActiveRow> $items Collection of entities to load delegates for
+     * @param int $max_depth Maximum depth to recurse (default 10)
+     * @return array<ActiveRow>
+     *
+     * @example
+     * // Load all levels automatically
+     * $things = Thing::find_all();
+     * $things = Thing::eager_load_delegates_recursive($things);
+     *
+     * // Each thing now has Book loaded, and each Book has TextBook loaded
+     * foreach ($things as $thing) {
+     *     $chain = $thing->get_chain();  // [Thing, Book, TextBook]
+     * }
+     */
+    public static function eager_load_delegates_recursive(array $items, int $max_depth = 10): array
+    {
+        if (empty($items) || $max_depth <= 0) {
+            return $items;
+        }
+
+        // First, eager load this level
+        $items = static::eager_load_delegates($items);
+
+        // Collect all delegates that also use DelegatedTypes
+        $delegates_by_class = [];
+        foreach ($items as $item) {
+            $delegate = $item->delegate();
+            if ($delegate !== null && method_exists($delegate, 'get_delegated_types')) {
+                $class = get_class($delegate);
+                if (!isset($delegates_by_class[$class])) {
+                    $delegates_by_class[$class] = [];
+                }
+                $delegates_by_class[$class][] = $delegate;
+            }
+        }
+
+        // Recursively load each delegate class's delegates
+        foreach ($delegates_by_class as $class => $delegates) {
+            if (method_exists($class, 'eager_load_delegates_recursive')) {
+                $class::eager_load_delegates_recursive($delegates, $max_depth - 1);
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * Find things with their delegates eagerly loaded to any depth.
+     *
+     * @param array $options Query options:
+     *   - 'where': Query condition
+     *   - 'order_by': Ordering
+     *   - 'limit': Result limit
+     *   - 'offset': Result offset
+     *   - 'max_depth': Maximum delegation depth (default: 10)
+     * @return array<static>
+     *
+     * @example
+     * // Load all levels (default)
+     * $things = Thing::find_with_delegates();
+     *
+     * // Limit depth to 2 levels (Thing → Book only)
+     * $things = Thing::find_with_delegates(['max_depth' => 1]);
+     *
+     * // With query conditions
+     * $textbooks = Thing::find_with_delegates([
+     *     'where' => eq($table->type, 'TextBook'),
+     *     'max_depth' => 10,
+     * ]);
+     */
+    public static function find_with_delegates(array $options = []): array
+    {
+        $max_depth = $options['max_depth'] ?? 10;
+        unset($options['max_depth']);
+
+        $things = static::find_all($options);
+
+        return static::eager_load_delegates_recursive($things, $max_depth);
+    }
+
+    /**
+     * Find one thing with its full delegate chain eagerly loaded.
      *
      * @param mixed $id Primary key value
+     * @param int $max_depth Maximum delegation depth (default: 10)
      * @return static|null
      */
-    public static function find_with_delegate($id): ?static
+    public static function find_with_delegate($id, int $max_depth = 10): ?static
     {
         $thing = static::find($id);
         if ($thing === null) {
             return null;
         }
 
-        // Trigger delegate loading
-        $thing->delegate();
+        // Recursively load the delegate chain
+        $current = $thing;
+        $depth = 0;
+
+        while ($depth < $max_depth) {
+            if (!method_exists($current, 'delegate')) {
+                break;
+            }
+
+            $delegate = $current->delegate();
+            if ($delegate === null) {
+                break;
+            }
+
+            $current = $delegate;
+            $depth++;
+        }
 
         return $thing;
     }

@@ -132,7 +132,8 @@ trait Persistable
             }
         } else {
             // INSERT new record
-            $data = $this->data;
+            // Use get_persistent_data() to exclude transient (dot-prefixed) keys
+            $data = $this->get_persistent_data();
 
             // Remove null primary key
             if (isset($data[$pk]) && $data[$pk] === null) {

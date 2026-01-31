@@ -65,6 +65,12 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     protected static $auto_wrap_relations = false;
 
     /**
+     * Whether to include transient (dot-prefixed) keys in JSON serialization
+     * @var bool
+     */
+    protected static $json_include_transient = false;
+
+    /**
      * Cache for wrapped relations
      * @var array
      */
@@ -131,11 +137,15 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     /**
      * Get the underlying data as a plain array
      *
+     * @param bool $include_transient Whether to include transient (dot-prefixed) keys
      * @return array
      */
-    public function to_array(): array
+    public function to_array(bool $include_transient = true): array
     {
-        return $this->data;
+        if ($include_transient) {
+            return $this->data;
+        }
+        return $this->get_persistent_data();
     }
 
     /**
@@ -254,12 +264,18 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     /**
      * Serialize to JSON
      *
+     * By default excludes transient (dot-prefixed) keys.
+     * Set static::$json_include_transient = true to include them.
+     *
      * @return array
      */
     #[\ReturnTypeWillChange]
     public function jsonSerialize()
     {
-        return $this->data;
+        if (static::$json_include_transient) {
+            return $this->data;
+        }
+        return $this->get_persistent_data();
     }
 
     // =========================================================================
@@ -283,12 +299,18 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     /**
      * Get fields that have changed since wrapping/saving
      *
+     * Excludes transient (dot-prefixed) keys which are not persisted.
+     *
      * @return array
      */
     public function get_dirty(): array
     {
         $dirty = [];
         foreach ($this->data as $key => $value) {
+            // Skip transient keys
+            if (static::is_transient_key($key)) {
+                continue;
+            }
             if (!array_key_exists($key, $this->original) || $this->original[$key] !== $value) {
                 $dirty[$key] = $value;
             }
@@ -341,11 +363,13 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     /**
      * Reset dirty tracking (mark current state as clean)
      *
+     * Only syncs persistent data; transient keys are not tracked.
+     *
      * @return static
      */
     public function sync_original(): self
     {
-        $this->original = $this->data;
+        $this->original = $this->get_persistent_data();
         return $this;
     }
 
@@ -586,6 +610,61 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     public function get(string $key, $default = null)
     {
         return $this->data[$key] ?? $default;
+    }
+
+    /**
+     * Set a value by key
+     *
+     * Supports transient (dot-prefixed) keys that are stored in memory
+     * but not persisted to the database.
+     *
+     * @param string $key
+     * @param mixed $value
+     * @return static
+     */
+    public function set(string $key, $value): self
+    {
+        $this->data[$key] = $value;
+        // Clear cached wrapped relation if data changes
+        unset($this->wrapped_relations_cache[$key]);
+        return $this;
+    }
+
+    /**
+     * Check if a key is a transient (dot-prefixed) key
+     *
+     * Transient keys start with "." and are stored in memory but not persisted.
+     *
+     * @param string $key
+     * @return bool
+     */
+    public static function is_transient_key(string $key): bool
+    {
+        return strlen($key) > 0 && $key[0] === '.';
+    }
+
+    /**
+     * Get only the persistent data (excludes transient dot-prefixed keys)
+     *
+     * @return array
+     */
+    public function get_persistent_data(): array
+    {
+        return array_filter($this->data, function ($key) {
+            return !static::is_transient_key($key);
+        }, ARRAY_FILTER_USE_KEY);
+    }
+
+    /**
+     * Get only the transient data (dot-prefixed keys only)
+     *
+     * @return array
+     */
+    public function get_transient_data(): array
+    {
+        return array_filter($this->data, function ($key) {
+            return static::is_transient_key($key);
+        }, ARRAY_FILTER_USE_KEY);
     }
 
     /**

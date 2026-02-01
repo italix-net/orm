@@ -15,6 +15,10 @@ use Examples\Ecommerce\Models\Thing;
 use Examples\Ecommerce\Models\Product;
 use Examples\Ecommerce\Models\Order;
 use Examples\Ecommerce\Models\OrderItem;
+use Examples\Ecommerce\Models\Customer;
+use Examples\Ecommerce\Models\Person;
+use Examples\Ecommerce\Models\Organization;
+use Examples\Ecommerce\Models\PostalAddress;
 
 // Autoload example classes
 spl_autoload_register(function ($class) {
@@ -49,9 +53,12 @@ class EcommerceTestRunner
         $this->test_product_group();
         $this->test_variant_attributes();
         $this->test_find_variants_by();
+        $this->test_customer_creation();
+        $this->test_postal_address();
         $this->test_order_creation();
         $this->test_order_items();
         $this->test_order_totals();
+        $this->test_customer_order_history();
         $this->test_type_checking();
         $this->test_serialization();
 
@@ -67,10 +74,19 @@ class EcommerceTestRunner
 
         $this->db->create_tables(...$this->schema->get_tables());
 
+        // Thing hierarchy
         Thing::set_persistence($this->db, $this->schema->things);
         Product::set_persistence($this->db, $this->schema->products);
         Order::set_persistence($this->db, $this->schema->orders);
         OrderItem::set_persistence($this->db, $this->schema->order_items);
+
+        // Customer hierarchy
+        Customer::set_persistence($this->db, $this->schema->customers);
+        Person::set_persistence($this->db, $this->schema->persons);
+        Organization::set_persistence($this->db, $this->schema->organizations);
+
+        // PostalAddress
+        PostalAddress::set_persistence($this->db, $this->schema->postal_addresses);
     }
 
     private function teardown(): void
@@ -350,27 +366,189 @@ class EcommerceTestRunner
         echo "\n";
     }
 
+    private function test_customer_creation(): void
+    {
+        echo "Customer Creation (Person/Organization)\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create a Person customer
+        $person = Customer::create_person([
+            'email' => 'john.doe@example.com',
+            'telephone' => '+1-555-123-4567',
+            'customer_number' => 'CUST-001',
+        ], [
+            'given_name' => 'John',
+            'family_name' => 'Doe',
+            'honorific_prefix' => 'Mr.',
+            'gender' => 'Male',
+        ]);
+
+        $this->assert('Person customer created', $person['id'] !== null);
+        $this->assert('Person type is correct', $person['type'] === 'Person');
+        $this->assert('Person is_person flag', $person['is_person'] === true);
+        $this->assert('Person is_organization flag false', $person['is_organization'] === false);
+
+        $personDelegate = $person->delegate();
+        $this->assert('Person delegate is Person instance', $personDelegate instanceof Person);
+        $this->assert('Person given_name correct', $personDelegate->given_name() === 'John');
+        $this->assert('Person family_name correct', $personDelegate->family_name() === 'Doe');
+        $this->assert('Person display_name correct', $personDelegate->display_name() === 'Mr. John Doe');
+
+        // Create an Organization customer
+        $org = Customer::create_organization([
+            'email' => 'contact@acme.com',
+            'telephone' => '+1-555-987-6543',
+            'customer_number' => 'CUST-002',
+        ], [
+            'legal_name' => 'ACME Corporation Inc.',
+            'trading_name' => 'ACME Corp',
+            'vat_id' => 'IT12345678901',
+            'contact_name' => 'Jane Smith',
+        ]);
+
+        $this->assert('Organization customer created', $org['id'] !== null);
+        $this->assert('Organization type is correct', $org['type'] === 'Organization');
+        $this->assert('Organization is_organization flag', $org['is_organization'] === true);
+
+        $orgDelegate = $org->delegate();
+        $this->assert('Org delegate is Organization instance', $orgDelegate instanceof Organization);
+        $this->assert('Org has_vat returns true', $orgDelegate->has_vat() === true);
+        $this->assert('Org vat_country is IT', $orgDelegate->vat_country() === 'IT');
+        $this->assert('Org display_name uses trading name', $orgDelegate->display_name() === 'ACME Corp');
+
+        // Test auto-detection (with VAT = Organization)
+        $autoOrg = Customer::create_auto([
+            'email' => 'billing@business.com',
+        ], [
+            'vat_id' => 'DE123456789',
+            'legal_name' => 'German Business GmbH',
+        ]);
+        $this->assert('Auto-detect with VAT creates Organization', $autoOrg->is_organization() === true);
+
+        // Test auto-detection (without VAT = Person)
+        $autoPerson = Customer::create_auto([
+            'email' => 'personal@email.com',
+        ], [
+            'given_name' => 'Alice',
+            'family_name' => 'Smith',
+        ]);
+        $this->assert('Auto-detect without VAT creates Person', $autoPerson->is_person() === true);
+
+        // Test find_by_email
+        $found = Customer::find_by_email('john.doe@example.com');
+        $this->assert('find_by_email returns customer', $found !== null);
+        $this->assert('find_by_email has correct email', $found['email'] === 'john.doe@example.com');
+
+        echo "\n";
+    }
+
+    private function test_postal_address(): void
+    {
+        echo "Postal Address\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create a customer first
+        $customer = Customer::create_person([
+            'email' => 'address.test@example.com',
+        ], [
+            'given_name' => 'Test',
+            'family_name' => 'User',
+        ]);
+
+        // Create a billing address
+        $billing = PostalAddress::make_billing_address($customer, [
+            'address_name' => 'Home',
+            'street_address' => '123 Main Street, Apt 4B',
+            'address_locality' => 'New York',
+            'address_region' => 'NY',
+            'postal_code' => '10001',
+            'address_country' => 'USA',
+            'contact_name' => 'Test User',
+            'telephone' => '+1-555-111-2222',
+        ]);
+
+        $this->assert('Billing address created', $billing['id'] !== null);
+        $this->assert('Billing address is_billing', $billing->is_billing() === true);
+        $this->assert('Billing address city', $billing->city() === 'New York');
+        $this->assert('Billing address postal_code', $billing->postal_code() === '10001');
+
+        // Create a shipping address
+        $shipping = PostalAddress::make_shipping_address($customer, [
+            'address_name' => 'Work',
+            'street_address' => '456 Office Park',
+            'address_locality' => 'Los Angeles',
+            'address_region' => 'CA',
+            'postal_code' => '90001',
+            'address_country' => 'USA',
+        ]);
+
+        $this->assert('Shipping address created', $shipping['id'] !== null);
+        $this->assert('Shipping address is_shipping', $shipping->is_shipping() === true);
+
+        // Test formatted output
+        $formatted = $billing->formatted();
+        $this->assert('Formatted address includes street', strpos($formatted, '123 Main Street') !== false);
+        $this->assert('Formatted address includes city', strpos($formatted, 'New York') !== false);
+
+        // Test one_line output
+        $oneLine = $billing->one_line();
+        $this->assert('One-line has city', strpos($oneLine, 'New York') !== false);
+
+        // Test find_by_owner
+        $addresses = PostalAddress::find_by_owner($customer);
+        $this->assert('find_by_owner returns 2 addresses', count($addresses) === 2);
+
+        // Test owner relationship
+        $owner = $billing->owner();
+        $this->assert('Owner returns customer', $owner !== null);
+        $this->assert('Owner email matches', $owner['email'] === 'address.test@example.com');
+
+        echo "\n";
+    }
+
     private function test_order_creation(): void
     {
         echo "Order Creation\n";
         echo str_repeat('-', 30) . "\n";
 
-        $order = Thing::create_order([
-            'name' => 'Order #12345',
-            'description' => 'Customer order from web store',
+        // Create customer and address for order
+        $customer = Customer::create_person([
+            'email' => 'order.customer@example.com',
         ], [
-            'order_number' => 'ORD-2024-12345',
-            'order_status' => Order::STATUS_PROCESSING,
-            'order_date' => date('Y-m-d H:i:s'),
-            'customer_name' => 'John Doe',
-            'customer_email' => 'john@example.com',
-            'shipping_address' => '123 Main St, City, State 12345',
-            'subtotal' => 100.00,
-            'tax' => 8.00,
-            'shipping_cost' => 5.99,
-            'total_price' => 113.99,
-            'currency' => 'USD',
+            'given_name' => 'John',
+            'family_name' => 'Doe',
         ]);
+
+        $address = PostalAddress::make_address([
+            'street_address' => '123 Main St',
+            'address_locality' => 'City',
+            'address_region' => 'State',
+            'postal_code' => '12345',
+            'address_country' => 'USA',
+            'is_billing' => true,
+            'is_shipping' => true,
+        ], $customer);
+
+        // Create order with customer and address
+        $order = Thing::create_order_for_customer(
+            $customer,
+            $address,
+            null, // same address for delivery
+            [
+                'name' => 'Order #12345',
+                'description' => 'Customer order from web store',
+            ],
+            [
+                'order_number' => 'ORD-2024-12345',
+                'order_status' => Order::STATUS_PROCESSING,
+                'order_date' => date('Y-m-d H:i:s'),
+                'subtotal' => 100.00,
+                'tax' => 8.00,
+                'shipping_cost' => 5.99,
+                'total_price' => 113.99,
+                'currency' => 'USD',
+            ]
+        );
 
         $this->assert('Order created with ID', $order['id'] !== null);
         $this->assert('Order type is correct', $order['type'] === 'Order');
@@ -382,6 +560,22 @@ class EcommerceTestRunner
         $this->assert('Order status is correct', $delegate->status() === Order::STATUS_PROCESSING);
         $this->assert('Order formatted_total works', $delegate->formatted_total() === '$113.99');
         $this->assert('Order can_cancel returns true', $delegate->can_cancel() === true);
+
+        // Test customer relationship
+        $orderCustomer = $delegate->customer();
+        $this->assert('Order has customer', $orderCustomer !== null);
+        $this->assert('Order customer email matches', $orderCustomer['email'] === 'order.customer@example.com');
+        $this->assert('Order customer_name method', $delegate->customer_name() === 'John Doe');
+        $this->assert('Order customer_is_person', $delegate->customer_is_person() === true);
+
+        // Test address relationships
+        $billingAddr = $delegate->billing_address();
+        $this->assert('Order has billing address', $billingAddr !== null);
+        $this->assert('Billing address city', $billingAddr->city() === 'City');
+
+        $deliveryAddr = $delegate->delivery_address();
+        $this->assert('Order has delivery address', $deliveryAddr !== null);
+        $this->assert('Same billing/delivery', $delegate->same_billing_delivery() === true);
 
         echo "\n";
     }
@@ -406,12 +600,26 @@ class EcommerceTestRunner
             'price' => 15.00,
         ]);
 
+        // Create customer and address for order
+        $customer = Customer::create_person([
+            'email' => 'items.customer@example.com',
+        ], [
+            'given_name' => 'Test',
+            'family_name' => 'Customer',
+        ]);
+
+        $address = PostalAddress::make_address([
+            'street_address' => '456 Test St',
+            'address_locality' => 'TestCity',
+            'is_billing' => true,
+            'is_shipping' => true,
+        ], $customer);
+
         // Create order
-        $order = Thing::create_order([
+        $order = Thing::create_order_for_customer($customer, $address, null, [
             'name' => 'Test Order',
         ], [
             'order_number' => 'ORD-TEST-001',
-            'customer_name' => 'Test Customer',
         ]);
 
         // Create order items
@@ -455,10 +663,27 @@ class EcommerceTestRunner
         echo "Order Totals Calculation\n";
         echo str_repeat('-', 30) . "\n";
 
+        // Create customer and address
+        $customer = Customer::create_person([
+            'email' => 'totals.test@example.com',
+        ], [
+            'given_name' => 'Totals',
+            'family_name' => 'Tester',
+        ]);
+
+        $address = PostalAddress::make_address([
+            'street_address' => '789 Totals Lane',
+            'address_locality' => 'TotalCity',
+            'is_billing' => true,
+            'is_shipping' => true,
+        ], $customer);
+
         // Create order with items and calculate totals
         $product = Thing::create_product(['name' => 'Test Product'], ['price' => 10.00]);
 
-        $order = Thing::create_order(['name' => 'Totals Test Order'], [
+        $order = Thing::create_order_for_customer($customer, $address, null, [
+            'name' => 'Totals Test Order',
+        ], [
             'order_number' => 'ORD-TOTALS-001',
         ]);
 
@@ -478,13 +703,111 @@ class EcommerceTestRunner
         echo "\n";
     }
 
+    private function test_customer_order_history(): void
+    {
+        echo "Customer Order History\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create a customer with multiple orders
+        $customer = Customer::create_person([
+            'email' => 'history.test@example.com',
+            'customer_number' => 'HIST-001',
+        ], [
+            'given_name' => 'History',
+            'family_name' => 'Customer',
+        ]);
+
+        $address = PostalAddress::make_address([
+            'street_address' => '100 History Lane',
+            'address_locality' => 'HistoryCity',
+            'is_billing' => true,
+            'is_shipping' => true,
+        ], $customer);
+
+        // Create multiple orders with different dates
+        $order1 = Thing::create_order_for_customer($customer, $address, null, [
+            'name' => 'First Order',
+        ], [
+            'order_number' => 'HIST-ORD-001',
+            'order_date' => '2024-01-15 10:00:00',
+            'total_price' => 50.00,
+        ]);
+
+        $order2 = Thing::create_order_for_customer($customer, $address, null, [
+            'name' => 'Second Order',
+        ], [
+            'order_number' => 'HIST-ORD-002',
+            'order_date' => '2024-02-20 14:30:00',
+            'total_price' => 75.00,
+        ]);
+
+        $order3 = Thing::create_order_for_customer($customer, $address, null, [
+            'name' => 'Third Order',
+        ], [
+            'order_number' => 'HIST-ORD-003',
+            'order_date' => '2024-03-10 09:15:00',
+            'total_price' => 100.00,
+        ]);
+
+        // Test order_count
+        $this->assert('Customer has 3 orders', $customer->order_count() === 3);
+
+        // Test orders() method
+        $orders = $customer->orders();
+        $this->assert('orders() returns 3 orders', count($orders) === 3);
+
+        // Test total_spent
+        $totalSpent = $customer->total_spent();
+        $this->assert('Total spent is $225.00', $totalSpent === 225.00);
+
+        // Test average_order_value
+        $avgValue = $customer->average_order_value();
+        $this->assert('Average order value is $75.00', $avgValue === 75.00);
+
+        // Test first_order_date
+        $firstDate = $customer->first_order_date();
+        $this->assert('First order date is 2024-01-15', strpos($firstDate, '2024-01-15') === 0);
+
+        // Test last_order_date
+        $lastDate = $customer->last_order_date();
+        $this->assert('Last order date is 2024-03-10', strpos($lastDate, '2024-03-10') === 0);
+
+        // Test average_days_between_orders
+        $avgDays = $customer->average_days_between_orders();
+        $this->assert('Average days between orders calculated', $avgDays !== null && $avgDays > 0);
+
+        // Test customer addresses
+        $addresses = $customer->addresses();
+        $this->assert('Customer has addresses', count($addresses) >= 1);
+
+        echo "\n";
+    }
+
     private function test_type_checking(): void
     {
         echo "Type Checking\n";
         echo str_repeat('-', 30) . "\n";
 
+        // Create customer and address for order
+        $customer = Customer::create_person([
+            'email' => 'type.test@example.com',
+        ], [
+            'given_name' => 'Type',
+            'family_name' => 'Tester',
+        ]);
+
+        $address = PostalAddress::make_address([
+            'street_address' => '111 Type St',
+            'address_locality' => 'TypeCity',
+            'is_billing' => true,
+        ], $customer);
+
         $product = Thing::create_product(['name' => 'Type Test Product'], []);
-        $order = Thing::create_order(['name' => 'Type Test Order'], ['order_number' => 'ORD-TYPE-001']);
+        $order = Thing::create_order_for_customer($customer, $address, null, [
+            'name' => 'Type Test Order',
+        ], [
+            'order_number' => 'ORD-TYPE-001',
+        ]);
 
         $this->assert('Product is_product() returns true', $product->is_product() === true);
         $this->assert('Product is_order() returns false', $product->is_order() === false);

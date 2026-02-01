@@ -30,6 +30,10 @@ use Examples\Ecommerce\Models\Thing;
 use Examples\Ecommerce\Models\Product;
 use Examples\Ecommerce\Models\Order;
 use Examples\Ecommerce\Models\OrderItem;
+use Examples\Ecommerce\Models\Customer;
+use Examples\Ecommerce\Models\Person;
+use Examples\Ecommerce\Models\Organization;
+use Examples\Ecommerce\Models\PostalAddress;
 
 // Autoload example classes
 spl_autoload_register(function ($class) {
@@ -121,11 +125,19 @@ class ImportOrders
         // Create tables if they don't exist
         $this->db->create_tables(...$this->schema->get_tables());
 
-        // Set up persistence
+        // Set up persistence for Thing hierarchy
         Thing::set_persistence($this->db, $this->schema->things);
         Product::set_persistence($this->db, $this->schema->products);
         Order::set_persistence($this->db, $this->schema->orders);
         OrderItem::set_persistence($this->db, $this->schema->order_items);
+
+        // Set up persistence for Customer hierarchy
+        Customer::set_persistence($this->db, $this->schema->customers);
+        Person::set_persistence($this->db, $this->schema->persons);
+        Organization::set_persistence($this->db, $this->schema->organizations);
+
+        // Set up persistence for PostalAddress
+        PostalAddress::set_persistence($this->db, $this->schema->postal_addresses);
     }
 
     /**
@@ -193,39 +205,46 @@ class ImportOrders
 
         $this->log("  Importing order #{$psOrderId} ({$psOrderRef})...");
 
-        // Get customer info
-        $customer = $this->getCustomer((int) $psOrder['id_customer']);
-        $customerName = $this->formatCustomerName($customer);
-        $customerEmail = $customer['email'] ?? '';
+        // Get customer info from PrestaShop
+        $psCustomer = $this->getCustomer((int) $psOrder['id_customer']);
 
-        // Get addresses
-        $shippingAddress = $this->getAddress((int) $psOrder['id_address_delivery']);
-        $billingAddress = $this->getAddress((int) $psOrder['id_address_invoice']);
+        // Get addresses from PrestaShop
+        $psShippingAddress = $this->getAddress((int) $psOrder['id_address_delivery']);
+        $psBillingAddress = $this->getAddress((int) $psOrder['id_address_invoice']);
+
+        // Get or create customer (Person or Organization based on VAT in billing address)
+        $customer = $this->getOrCreateCustomer($psCustomer, $psBillingAddress);
+
+        // Create postal addresses
+        $billingAddress = $this->createPostalAddress($psBillingAddress, $customer, true, false);
+        $deliveryAddress = $this->createPostalAddress($psShippingAddress, $customer, false, true);
 
         // Map order status
         $orderStatus = $this->mapOrderStatus((int) $psOrder['current_state']);
 
-        // Create the order
-        $order = Thing::create_order([
-            'name' => "Order {$psOrderRef}",
-            'description' => "Imported from PrestaShop (ID: {$psOrderId})",
-        ], [
-            'order_number' => $psOrderRef,
-            'order_status' => $orderStatus,
-            'order_date' => $psOrder['date_add'] ?? date('Y-m-d H:i:s'),
-            'customer_name' => $customerName,
-            'customer_email' => $customerEmail,
-            'shipping_address' => $this->formatAddress($shippingAddress),
-            'billing_address' => $this->formatAddress($billingAddress),
-            'subtotal' => (float) ($psOrder['total_products'] ?? 0),
-            'tax' => (float) ($psOrder['total_products_wt'] ?? 0) - (float) ($psOrder['total_products'] ?? 0),
-            'shipping_cost' => (float) ($psOrder['total_shipping'] ?? 0),
-            'discount' => (float) ($psOrder['total_discounts'] ?? 0),
-            'total_price' => (float) ($psOrder['total_paid'] ?? 0),
-            'currency' => $this->config['default_currency'] ?? 'EUR',
-            'payment_method' => $psOrder['payment'] ?? 'Unknown',
-            'payment_status' => $this->mapPaymentStatus($psOrder),
-        ]);
+        // Create the order with customer and addresses
+        $order = Thing::create_order_for_customer(
+            $customer,
+            $billingAddress,
+            $deliveryAddress,
+            [
+                'name' => "Order {$psOrderRef}",
+                'description' => "Imported from PrestaShop (ID: {$psOrderId})",
+            ],
+            [
+                'order_number' => $psOrderRef,
+                'order_status' => $orderStatus,
+                'order_date' => $psOrder['date_add'] ?? date('Y-m-d H:i:s'),
+                'subtotal' => (float) ($psOrder['total_products'] ?? 0),
+                'tax' => (float) ($psOrder['total_products_wt'] ?? 0) - (float) ($psOrder['total_products'] ?? 0),
+                'shipping_cost' => (float) ($psOrder['total_shipping'] ?? 0),
+                'discount' => (float) ($psOrder['total_discounts'] ?? 0),
+                'total_price' => (float) ($psOrder['total_paid'] ?? 0),
+                'currency' => $this->config['default_currency'] ?? 'EUR',
+                'payment_method' => $psOrder['payment'] ?? 'Unknown',
+                'payment_status' => $this->mapPaymentStatus($psOrder),
+            ]
+        );
 
         $this->ordersImported++;
 
@@ -235,6 +254,120 @@ class ImportOrders
         foreach ($orderDetails as $item) {
             $this->importOrderItem($order, $item);
         }
+
+        $this->log("    Customer: {$customer->display_name()} (" . ($customer->is_organization() ? 'Organization' : 'Person') . ")");
+    }
+
+    /**
+     * Get or create a Customer from PrestaShop data
+     *
+     * @param array $psCustomer PrestaShop customer data
+     * @param array $psBillingAddress PrestaShop billing address (to check for VAT)
+     * @return Customer
+     */
+    private function getOrCreateCustomer(array $psCustomer, array $psBillingAddress): Customer
+    {
+        $email = $psCustomer['email'] ?? '';
+        $psCustomerId = (int) ($psCustomer['id'] ?? 0);
+
+        // Check cache first
+        $cacheKey = "customer_{$psCustomerId}";
+        if (isset($this->customerCache[$cacheKey]) && $this->customerCache[$cacheKey] instanceof Customer) {
+            return $this->customerCache[$cacheKey];
+        }
+
+        // Try to find existing customer by email
+        if ($email) {
+            $existing = Customer::find_by_email($email);
+            if ($existing) {
+                $this->customerCache[$cacheKey] = $existing;
+                return $existing;
+            }
+        }
+
+        // Determine if Organization (has VAT number) or Person
+        $vatId = $psBillingAddress['vat_number'] ?? '';
+        $hasVat = !empty($vatId);
+
+        // Customer base data
+        $customerData = [
+            'email' => $email,
+            'telephone' => $psBillingAddress['phone'] ?? $psBillingAddress['phone_mobile'] ?? null,
+            'customer_number' => "PS-{$psCustomerId}",
+            'customer_since' => $psCustomer['date_add'] ?? date('Y-m-d H:i:s'),
+            'customer_type' => ($psCustomer['is_guest'] ?? '0') === '1' ? 'guest' : 'registered',
+        ];
+
+        if ($hasVat) {
+            // Create Organization
+            $orgData = [
+                'legal_name' => $psBillingAddress['company'] ?? null,
+                'trading_name' => $psBillingAddress['company'] ?? null,
+                'vat_id' => $vatId,
+                'contact_name' => $this->formatCustomerName($psCustomer),
+                'contact_email' => $email,
+                'contact_phone' => $psBillingAddress['phone'] ?? null,
+            ];
+
+            $customer = Customer::create_organization($customerData, $orgData);
+            $this->log("    Created Organization customer: " . ($psBillingAddress['company'] ?? 'Unknown'));
+        } else {
+            // Create Person
+            $personData = [
+                'given_name' => $psCustomer['firstname'] ?? null,
+                'family_name' => $psCustomer['lastname'] ?? null,
+                'gender' => $this->mapGender($psCustomer['id_gender'] ?? 0),
+                'birth_date' => $psCustomer['birthday'] ?? null,
+            ];
+
+            $customer = Customer::create_person($customerData, $personData);
+            $this->log("    Created Person customer: " . $this->formatCustomerName($psCustomer));
+        }
+
+        $this->customerCache[$cacheKey] = $customer;
+        return $customer;
+    }
+
+    /**
+     * Create a PostalAddress from PrestaShop address data
+     *
+     * @param array $psAddress PrestaShop address data
+     * @param Customer $customer The customer
+     * @param bool $isBilling Whether this is a billing address
+     * @param bool $isShipping Whether this is a shipping address
+     * @return PostalAddress
+     */
+    private function createPostalAddress(array $psAddress, Customer $customer, bool $isBilling, bool $isShipping): PostalAddress
+    {
+        $addressData = [
+            'address_name' => $psAddress['alias'] ?? ($isBilling ? 'Billing' : 'Shipping'),
+            'street_address' => trim(($psAddress['address1'] ?? '') . "\n" . ($psAddress['address2'] ?? '')),
+            'address_locality' => $psAddress['city'] ?? null,
+            'address_region' => null, // PrestaShop uses id_state, would need lookup
+            'postal_code' => $psAddress['postcode'] ?? null,
+            'address_country' => $psAddress['country'] ?? null,
+            'contact_name' => trim(($psAddress['firstname'] ?? '') . ' ' . ($psAddress['lastname'] ?? '')),
+            'telephone' => $psAddress['phone'] ?? $psAddress['phone_mobile'] ?? null,
+            'is_billing' => $isBilling,
+            'is_shipping' => $isShipping,
+        ];
+
+        return PostalAddress::make_address($addressData, $customer);
+    }
+
+    /**
+     * Map PrestaShop gender ID to string
+     *
+     * @param int $genderId PrestaShop gender ID (1=Male, 2=Female)
+     * @return string|null
+     */
+    private function mapGender(int $genderId): ?string
+    {
+        return match ($genderId) {
+            1 => 'Male',
+            2 => 'Female',
+            default => null,
+        };
     }
 
     /**

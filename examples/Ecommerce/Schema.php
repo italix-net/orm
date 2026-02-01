@@ -6,12 +6,17 @@
  *
  * Hierarchy:
  * - Thing (base) → Product, Order, OrderItem (delegates)
+ * - Customer (base) → Person, Organization (delegates) - Agent pattern
+ * - PostalAddress (standalone) for billing/delivery addresses
  * - ProductGroup is handled as a Product with is_group=true
  *
  * @see https://schema.org/Product
  * @see https://schema.org/ProductGroup
  * @see https://schema.org/Order
  * @see https://schema.org/OrderItem
+ * @see https://schema.org/Person
+ * @see https://schema.org/Organization
+ * @see https://schema.org/PostalAddress
  */
 
 namespace Examples\Ecommerce;
@@ -33,10 +38,19 @@ use function Italix\Orm\Schema\timestamp;
  */
 class Schema
 {
+    // Thing hierarchy
     public Table $things;
     public Table $products;
     public Table $orders;
     public Table $order_items;
+
+    // Customer hierarchy (Agent: Person or Organization)
+    public Table $customers;
+    public Table $persons;
+    public Table $organizations;
+
+    // Address
+    public Table $postal_addresses;
 
     public function __construct()
     {
@@ -133,6 +147,125 @@ class Schema
         ], 'sqlite');
 
         // =====================================================
+        // CUSTOMERS TABLE (Base for Person/Organization - Agent)
+        // =====================================================
+        // Schema.org Agent pattern: customer can be Person or Organization
+        // @see https://schema.org/Person
+        // @see https://schema.org/Organization
+        $this->customers = new Table('customers', [
+            'id'          => bigint()->primary_key()->auto_increment(),
+            'uuid'        => varchar(36)->not_null()->unique(),
+            'type'        => varchar(50)->not_null(),       // 'Person' or 'Organization'
+            'type_path'   => varchar(200),                  // 'Customer/Person', 'Customer/Organization'
+
+            // Common properties (shared by Person and Organization)
+            'email'       => varchar(200),                  // Primary contact email
+            'telephone'   => varchar(50),                   // Primary phone number
+
+            // Customer metadata
+            'customer_number' => varchar(50)->unique(),     // Internal customer ID/code
+            'customer_since'  => timestamp(),               // Registration date
+            'customer_type'   => varchar(50)->default('registered'), // guest, registered, vip
+
+            // Flags for efficient querying
+            'is_person'       => boolean()->default(false),
+            'is_organization' => boolean()->default(false),
+
+            // Timestamps
+            'created_at'  => timestamp(),
+            'updated_at'  => timestamp(),
+        ], 'sqlite');
+
+        // =====================================================
+        // PERSONS TABLE (Delegate for Person customers)
+        // =====================================================
+        // @see https://schema.org/Person
+        $this->persons = new Table('persons', [
+            'id'          => bigint()->primary_key()->auto_increment(),
+            'customer_id' => bigint()->not_null(),          // FK to customers
+
+            // Person name (Schema.org)
+            'given_name'  => varchar(100),                  // First name
+            'family_name' => varchar(100),                  // Last name
+            'additional_name' => varchar(100),              // Middle name
+            'honorific_prefix' => varchar(20),              // Mr., Mrs., Dr., etc.
+            'honorific_suffix' => varchar(20),              // Jr., III, PhD, etc.
+
+            // Personal identifiers
+            'tax_id'      => varchar(50),                   // Personal tax ID (SSN, fiscal code, etc.)
+            'birth_date'  => varchar(10),                   // YYYY-MM-DD format
+
+            // Gender (Schema.org)
+            'gender'      => varchar(20),                   // Male, Female, Other
+        ], 'sqlite');
+
+        // =====================================================
+        // ORGANIZATIONS TABLE (Delegate for Organization customers)
+        // =====================================================
+        // @see https://schema.org/Organization
+        $this->organizations = new Table('organizations', [
+            'id'          => bigint()->primary_key()->auto_increment(),
+            'customer_id' => bigint()->not_null(),          // FK to customers
+
+            // Organization name
+            'legal_name'  => varchar(255),                  // Official registered name
+            'trading_name' => varchar(255),                 // DBA / trading as name
+
+            // Tax/Legal identifiers
+            'vat_id'      => varchar(50),                   // VAT number (EU)
+            'tax_id'      => varchar(50),                   // Tax ID / EIN
+            'duns_number' => varchar(20),                   // D-U-N-S number
+            'lei_code'    => varchar(20),                   // Legal Entity Identifier
+
+            // Organization details
+            'founding_date' => varchar(10),                 // YYYY-MM-DD format
+            'number_of_employees' => integer(),
+
+            // Contact person at organization
+            'contact_name'  => varchar(200),
+            'contact_email' => varchar(200),
+            'contact_phone' => varchar(50),
+        ], 'sqlite');
+
+        // =====================================================
+        // POSTAL_ADDRESSES TABLE
+        // =====================================================
+        // @see https://schema.org/PostalAddress
+        $this->postal_addresses = new Table('postal_addresses', [
+            'id'          => bigint()->primary_key()->auto_increment(),
+            'uuid'        => varchar(36)->not_null()->unique(),
+
+            // Owner of this address (polymorphic - can belong to Customer or be standalone)
+            'owner_type'  => varchar(50),                   // 'Customer', null for standalone
+            'owner_id'    => bigint(),                      // FK to customers.id
+
+            // Address label
+            'address_name' => varchar(100),                 // "Home", "Office", "Warehouse", etc.
+
+            // Schema.org PostalAddress properties
+            'street_address' => text(),                     // Street number, name, apt/suite
+            'address_locality' => varchar(100),             // City
+            'address_region' => varchar(100),               // State/Province/Region
+            'postal_code' => varchar(20),                   // ZIP/Postal code
+            'address_country' => varchar(100),              // Country name or ISO code
+
+            // Additional address details
+            'post_office_box_number' => varchar(20),        // P.O. Box
+
+            // Contact info for this address
+            'contact_name' => varchar(200),                 // Recipient name
+            'telephone'   => varchar(50),                   // Phone for this address
+
+            // Address type flags
+            'is_billing'  => boolean()->default(false),     // Can be used for billing
+            'is_shipping' => boolean()->default(false),     // Can be used for shipping
+
+            // Timestamps
+            'created_at'  => timestamp(),
+            'updated_at'  => timestamp(),
+        ], 'sqlite');
+
+        // =====================================================
         // ORDERS TABLE (Delegate for Order)
         // =====================================================
         // @see https://schema.org/Order
@@ -155,11 +288,19 @@ class Schema
             'order_date'       => timestamp(),              // When order was placed
             'payment_due_date' => timestamp(),
 
-            // Customer info (simplified - would typically be FK to Person/Organization)
-            'customer_name'    => varchar(200),
-            'customer_email'   => varchar(200),
-            'billing_address'  => text(),
-            'shipping_address' => text(),
+            // ===================================================
+            // CUSTOMER RELATIONSHIP (Polymorphic: Person or Organization)
+            // ===================================================
+            // @see https://schema.org/Order.customer
+            'customer_id'      => bigint(),                 // FK to customers (Person or Organization)
+
+            // ===================================================
+            // ADDRESS RELATIONSHIPS
+            // ===================================================
+            // @see https://schema.org/Order.billingAddress
+            // @see https://schema.org/Order.orderDelivery (simplified to direct FK)
+            'billing_address_id'  => bigint(),              // FK to postal_addresses
+            'delivery_address_id' => bigint(),              // FK to postal_addresses
 
             // Totals
             'subtotal'         => decimal(10, 2),
@@ -204,14 +345,31 @@ class Schema
     /**
      * Get all tables in creation order
      *
+     * Tables are ordered so that dependencies are created first:
+     * 1. Independent tables (things, customers, postal_addresses)
+     * 2. Delegate tables (products, persons, organizations)
+     * 3. Tables with FKs to above (orders - needs customers and addresses)
+     * 4. Child tables (order_items - needs orders)
+     *
      * @return array<Table>
      */
     public function get_tables(): array
     {
         return [
+            // Base tables
             $this->things,
+            $this->customers,
+            $this->postal_addresses,
+
+            // Delegate tables
             $this->products,
+            $this->persons,
+            $this->organizations,
+
+            // Order (depends on customers and addresses)
             $this->orders,
+
+            // Order items (depends on orders)
             $this->order_items,
         ];
     }

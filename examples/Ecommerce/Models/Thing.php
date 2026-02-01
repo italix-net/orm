@@ -214,6 +214,37 @@ class Thing extends ActiveRow
     }
 
     /**
+     * Create an Order for a Customer with addresses
+     *
+     * @param Customer $customer The customer placing the order
+     * @param PostalAddress $billing_address Billing address
+     * @param PostalAddress|null $delivery_address Delivery address (uses billing if null)
+     * @param array $thing_data Base thing data
+     * @param array $order_data Order-specific data
+     * @return static
+     */
+    public static function create_order_for_customer(
+        Customer $customer,
+        PostalAddress $billing_address,
+        ?PostalAddress $delivery_address = null,
+        array $thing_data = [],
+        array $order_data = []
+    ): static {
+        // Set customer and address IDs
+        $order_data['customer_id'] = $customer['id'];
+        $order_data['billing_address_id'] = $billing_address['id'];
+        $order_data['delivery_address_id'] = $delivery_address ? $delivery_address['id'] : $billing_address['id'];
+
+        // Auto-generate order name if not provided
+        if (!isset($thing_data['name'])) {
+            $orderNumber = $order_data['order_number'] ?? 'ORD-' . time();
+            $thing_data['name'] = "Order {$orderNumber}";
+        }
+
+        return static::create_order($thing_data, $order_data);
+    }
+
+    /**
      * Create an OrderItem
      *
      * @param Thing $order The Order this item belongs to
@@ -295,6 +326,22 @@ class Thing extends ActiveRow
         return static::find_with_delegates([
             'where' => eq($table->is_order, true),
         ]);
+    }
+
+    /**
+     * Find all Orders for a specific Customer
+     *
+     * @param Customer $customer The customer
+     * @return array<static>
+     */
+    public static function find_customer_orders(Customer $customer): array
+    {
+        $orders = static::find_orders();
+
+        return array_filter($orders, function ($order) use ($customer) {
+            $delegate = $order->delegate();
+            return $delegate && (int) $delegate['customer_id'] === (int) $customer['id'];
+        });
     }
 
     /**

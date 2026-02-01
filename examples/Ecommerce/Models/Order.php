@@ -234,27 +234,129 @@ class Order extends ActiveRow
     }
 
     // =========================================
-    // CUSTOMER
+    // CUSTOMER RELATIONSHIP
     // =========================================
 
     /**
-     * Get customer name
+     * Get the customer (Person or Organization) for this order
      *
-     * @return string|null
+     * @return Customer|null
      */
-    public function customer_name(): ?string
+    public function customer(): ?Customer
     {
-        return $this['customer_name'];
+        if (!$this['customer_id']) {
+            return null;
+        }
+
+        return Customer::find_with_delegate((int) $this['customer_id']);
     }
 
     /**
-     * Get customer email
+     * Get customer display name (for convenience)
+     *
+     * @return string
+     */
+    public function customer_name(): string
+    {
+        $customer = $this->customer();
+        return $customer ? $customer->display_name() : 'Unknown Customer';
+    }
+
+    /**
+     * Get customer email (for convenience)
      *
      * @return string|null
      */
     public function customer_email(): ?string
     {
-        return $this['customer_email'];
+        $customer = $this->customer();
+        return $customer ? $customer['email'] : null;
+    }
+
+    /**
+     * Check if customer is a Person
+     *
+     * @return bool
+     */
+    public function customer_is_person(): bool
+    {
+        $customer = $this->customer();
+        return $customer && $customer->is_person();
+    }
+
+    /**
+     * Check if customer is an Organization
+     *
+     * @return bool
+     */
+    public function customer_is_organization(): bool
+    {
+        $customer = $this->customer();
+        return $customer && $customer->is_organization();
+    }
+
+    // =========================================
+    // ADDRESS RELATIONSHIPS
+    // =========================================
+
+    /**
+     * Get the billing address
+     *
+     * @return PostalAddress|null
+     */
+    public function billing_address(): ?PostalAddress
+    {
+        if (!$this['billing_address_id']) {
+            return null;
+        }
+
+        return PostalAddress::find((int) $this['billing_address_id']);
+    }
+
+    /**
+     * Get the delivery/shipping address
+     *
+     * @return PostalAddress|null
+     */
+    public function delivery_address(): ?PostalAddress
+    {
+        if (!$this['delivery_address_id']) {
+            return null;
+        }
+
+        return PostalAddress::find((int) $this['delivery_address_id']);
+    }
+
+    /**
+     * Get formatted billing address
+     *
+     * @return string
+     */
+    public function formatted_billing_address(): string
+    {
+        $address = $this->billing_address();
+        return $address ? $address->formatted() : '';
+    }
+
+    /**
+     * Get formatted delivery address
+     *
+     * @return string
+     */
+    public function formatted_delivery_address(): string
+    {
+        $address = $this->delivery_address();
+        return $address ? $address->formatted() : '';
+    }
+
+    /**
+     * Check if billing and delivery addresses are the same
+     *
+     * @return bool
+     */
+    public function same_billing_delivery(): bool
+    {
+        return $this['billing_address_id'] === $this['delivery_address_id'];
     }
 
     // =========================================
@@ -305,14 +407,31 @@ class Order extends ActiveRow
             'orderDate' => $this['order_date'],
         ];
 
-        if ($this['customer_name']) {
-            $schema['customer'] = [
-                '@type' => 'Person',
-                'name' => $this['customer_name'],
-                'email' => $this['customer_email'],
+        // Customer (Person or Organization)
+        $customer = $this->customer();
+        if ($customer) {
+            $delegate = $customer->delegate();
+            if ($delegate) {
+                $schema['customer'] = $delegate->to_schema_org($customer);
+            }
+        }
+
+        // Billing address
+        $billingAddress = $this->billing_address();
+        if ($billingAddress) {
+            $schema['billingAddress'] = $billingAddress->to_schema_org();
+        }
+
+        // Delivery (we put it directly on order for simplicity)
+        $deliveryAddress = $this->delivery_address();
+        if ($deliveryAddress) {
+            $schema['orderDelivery'] = [
+                '@type' => 'ParcelDelivery',
+                'deliveryAddress' => $deliveryAddress->to_schema_org(),
             ];
         }
 
+        // Order items
         if (!empty($items)) {
             $schema['orderedItem'] = array_map(function ($item) {
                 $delegate = $item->delegate();
@@ -324,6 +443,13 @@ class Order extends ActiveRow
                 ];
             }, $items);
         }
+
+        // Price specification
+        $schema['acceptedOffer'] = [
+            '@type' => 'Offer',
+            'price' => $this['total_price'],
+            'priceCurrency' => $this['currency'] ?? 'USD',
+        ];
 
         return $schema;
     }

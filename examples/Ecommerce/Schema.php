@@ -98,7 +98,34 @@ class Schema
             // @see https://schema.org/ProductGroup
             'is_group'    => boolean()->default(false),     // True if this is a ProductGroup
             'variant_of_id' => bigint(),                    // FK to parent ProductGroup's thing_id
-            'varies_by'   => varchar(200),                  // What varies: 'color', 'size', etc.
+            'varies_by'   => varchar(200),                  // What varies: 'color,size', etc.
+
+            // ===================================================
+            // VARIANT ATTRIBUTES (Schema.org properties)
+            // ===================================================
+            // @see https://schema.org/Product variant properties
+
+            // Size (for apparel, shoes, etc.)
+            // @see https://schema.org/size
+            'size'        => varchar(50),                   // e.g., 'S', 'M', 'L', 'XL', '42', '10.5'
+            'size_system' => varchar(50),                   // e.g., 'US', 'EU', 'UK'
+            'size_group'  => varchar(50),                   // e.g., 'regular', 'petite', 'plus'
+
+            // Color
+            // @see https://schema.org/color
+            'color'       => varchar(100),                  // e.g., 'Red', 'Navy Blue', 'Black/White'
+
+            // Material
+            // @see https://schema.org/material
+            'material'    => varchar(200),                  // e.g., '100% Cotton', 'Leather'
+
+            // Pattern
+            // @see https://schema.org/pattern
+            'pattern'     => varchar(100),                  // e.g., 'Striped', 'Solid', 'Plaid'
+
+            // Additional variant properties (JSON for flexibility)
+            // @see https://schema.org/additionalProperty (PropertyValue)
+            'variant_attributes' => text(),                 // JSON: {"width": "32", "length": "30"}
 
             // Physical properties
             'weight'      => decimal(10, 3),                // Weight in kg

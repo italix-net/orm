@@ -113,6 +113,91 @@ class Thing extends ActiveRow
     }
 
     /**
+     * Create a Product variant with variant attributes
+     *
+     * Convenience method that auto-generates name with variant description
+     *
+     * @param Thing $product_group The parent ProductGroup
+     * @param array $variant_attrs Variant attributes (size, color, etc.)
+     * @param array $product_data Additional product data (sku, price, etc.)
+     * @param array $thing_data Override thing data (name auto-generated if not set)
+     * @return static
+     */
+    public static function create_variant(
+        Thing $product_group,
+        array $variant_attrs,
+        array $product_data = [],
+        array $thing_data = []
+    ): static {
+        // Standard variant attributes
+        $standard = ['size', 'size_system', 'size_group', 'color', 'material', 'pattern'];
+        $additional = [];
+
+        foreach ($variant_attrs as $key => $value) {
+            if (in_array($key, $standard, true)) {
+                $product_data[$key] = $value;
+            } else {
+                $additional[$key] = $value;
+            }
+        }
+
+        // Store additional attributes as JSON
+        if (!empty($additional)) {
+            $product_data['variant_attributes'] = json_encode($additional, JSON_UNESCAPED_UNICODE);
+        }
+
+        // Auto-generate variant name from parent + attributes
+        if (!isset($thing_data['name'])) {
+            $parentProduct = $product_group->delegate();
+            $variantDesc = self::build_variant_description($variant_attrs, $parentProduct);
+            $thing_data['name'] = $product_group['name'] . ' - ' . $variantDesc;
+        }
+
+        return static::create_product_variant($product_group, $thing_data, $product_data);
+    }
+
+    /**
+     * Build variant description string from attributes
+     *
+     * @param array $attrs Variant attributes
+     * @param Product|null $parentProduct Parent product (to get varies_by order)
+     * @return string
+     */
+    private static function build_variant_description(array $attrs, ?Product $parentProduct = null): string
+    {
+        // Use varies_by order if available
+        if ($parentProduct && method_exists($parentProduct, 'varies_by')) {
+            $ordered = [];
+            foreach ($parentProduct->varies_by() as $attr) {
+                if (isset($attrs[$attr])) {
+                    $ordered[] = $attrs[$attr];
+                }
+            }
+            if (!empty($ordered)) {
+                return implode(', ', $ordered);
+            }
+        }
+
+        // Fallback: use display-friendly order
+        $priority = ['color', 'size', 'material', 'pattern'];
+        $parts = [];
+
+        foreach ($priority as $attr) {
+            if (isset($attrs[$attr])) {
+                $parts[] = $attrs[$attr];
+                unset($attrs[$attr]);
+            }
+        }
+
+        // Add any remaining attributes
+        foreach ($attrs as $value) {
+            $parts[] = $value;
+        }
+
+        return implode(', ', $parts);
+    }
+
+    /**
      * Create an Order
      *
      * @param array $thing_data Base thing data (name = order title/reference)

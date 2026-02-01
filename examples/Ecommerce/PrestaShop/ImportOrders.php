@@ -246,12 +246,13 @@ class ImportOrders
     private function importOrderItem(Thing $order, array $item): void
     {
         $productId = (int) $item['product_id'];
+        $combinationId = (int) ($item['product_attribute_id'] ?? 0);
         $productName = $item['product_name'] ?? 'Unknown Product';
         $quantity = (int) ($item['product_quantity'] ?? 1);
         $unitPrice = (float) ($item['unit_price_tax_incl'] ?? $item['product_price'] ?? 0);
 
-        // Get or create the product
-        $product = $this->getOrCreateProduct($productId, $productName, $item);
+        // Get or create the product (handles variants automatically)
+        $product = $this->getOrCreateProductWithVariant($productId, $combinationId, $productName, $item);
 
         if (!$product) {
             $this->error("    Could not create product for item: {$productName}");
@@ -333,6 +334,188 @@ class ImportOrders
 
             $this->itemsCreated++;
         }
+    }
+
+    /**
+     * Get or create a product with variant support
+     *
+     * @param int $psProductId PrestaShop product ID
+     * @param int $combinationId PrestaShop combination ID (0 for simple products)
+     * @param string $name Product name
+     * @param array $itemData Additional item data
+     * @return Thing|null
+     */
+    private function getOrCreateProductWithVariant(int $psProductId, int $combinationId, string $name, array $itemData): ?Thing
+    {
+        // If no combination, it's a simple product
+        if ($combinationId === 0) {
+            return $this->getOrCreateProduct($psProductId, $name, $itemData);
+        }
+
+        // Cache key for this specific variant
+        $variantCacheKey = "ps_{$psProductId}_comb_{$combinationId}";
+        if (isset($this->productCache[$variantCacheKey])) {
+            return $this->productCache[$variantCacheKey];
+        }
+
+        // Check if variant exists by SKU
+        $combination = $this->client->getCombination($combinationId);
+        $variantSku = $combination['reference'] ?? $itemData['product_reference'] ?? "PS-{$psProductId}-{$combinationId}";
+
+        $existingProducts = Thing::find_products();
+        foreach ($existingProducts as $existing) {
+            $delegate = $existing->delegate();
+            if ($delegate && $delegate['sku'] === $variantSku) {
+                $this->productCache[$variantCacheKey] = $existing;
+                return $existing;
+            }
+        }
+
+        // First, ensure the parent ProductGroup exists
+        $parentGroup = $this->getOrCreateProductGroup($psProductId, $name);
+        if (!$parentGroup) {
+            // Fall back to simple product if we can't create group
+            return $this->getOrCreateProduct($psProductId, $name, $itemData);
+        }
+
+        // Get variant attributes (color, size, etc.)
+        $variantAttrs = $this->client->getCombinationAttributes($combination);
+
+        // Get combination-specific data
+        $price = (float) ($itemData['unit_price_tax_incl'] ?? $combination['price'] ?? 0);
+        $quantity = (int) ($combination['quantity'] ?? 0);
+
+        // If combination price is 0, use parent product price + impact
+        if ($price <= 0) {
+            $psProduct = $this->client->getProduct($psProductId);
+            $basePrice = (float) ($psProduct['price'] ?? 0);
+            $priceImpact = (float) ($combination['price'] ?? 0);
+            $price = $basePrice + $priceImpact;
+        }
+
+        // Create the variant using the new create_variant method
+        $variant = Thing::create_variant($parentGroup, $variantAttrs, [
+            'sku' => $variantSku,
+            'gtin' => $combination['ean13'] ?? null,
+            'price' => $price,
+            'currency' => $this->config['default_currency'] ?? 'EUR',
+            'availability' => $quantity > 0 ? 'InStock' : 'OutOfStock',
+            'inventory_level' => $quantity,
+        ]);
+
+        $this->productCache[$variantCacheKey] = $variant;
+        $this->productsCreated++;
+
+        $variantDesc = $variant->delegate()->variant_description();
+        $this->log("    Created variant: {$parentGroup['name']} - {$variantDesc} (SKU: {$variantSku})");
+
+        return $variant;
+    }
+
+    /**
+     * Get or create a ProductGroup (parent for variants)
+     *
+     * @param int $psProductId PrestaShop product ID
+     * @param string $name Product name
+     * @return Thing|null
+     */
+    private function getOrCreateProductGroup(int $psProductId, string $name): ?Thing
+    {
+        $cacheKey = "ps_{$psProductId}_group";
+        if (isset($this->productCache[$cacheKey])) {
+            return $this->productCache[$cacheKey];
+        }
+
+        // Check if ProductGroup already exists
+        $existingProducts = Thing::find_products();
+        foreach ($existingProducts as $existing) {
+            $delegate = $existing->delegate();
+            if ($delegate && $delegate['is_group'] && str_contains($delegate['sku'] ?? '', "PS-{$psProductId}")) {
+                // Make sure it's the group, not a variant
+                if (!$delegate->is_variant()) {
+                    $this->productCache[$cacheKey] = $existing;
+                    return $existing;
+                }
+            }
+        }
+
+        // Fetch product details from PrestaShop
+        $psProduct = $this->client->getProduct($psProductId);
+        if (!$psProduct) {
+            return null;
+        }
+
+        // Parse the product name (remove variant info if present)
+        $groupName = $this->parseBaseProductName($name);
+
+        // Determine what this product varies by
+        $variesBy = $this->determineVariesBy($psProductId);
+
+        // Create the ProductGroup
+        $productGroup = Thing::create_product_group([
+            'name' => $groupName,
+            'description' => $this->getProductDescription($psProduct),
+            'url' => $this->config['prestashop_url'] . '/index.php?id_product=' . $psProductId . '&controller=product',
+        ], [
+            'sku' => "PS-{$psProductId}",
+            'gtin' => $psProduct['ean13'] ?? null,
+            'brand' => $psProduct['manufacturer_name'] ?? null,
+            'price' => (float) ($psProduct['price'] ?? 0),
+            'currency' => $this->config['default_currency'] ?? 'EUR',
+            'varies_by' => $variesBy,
+        ]);
+
+        $this->productCache[$cacheKey] = $productGroup;
+        $this->productsCreated++;
+
+        $this->log("    Created ProductGroup: {$groupName} (varies by: {$variesBy}) [VARIANTS]");
+
+        return $productGroup;
+    }
+
+    /**
+     * Determine what a product varies by (color, size, etc.)
+     *
+     * @param int $psProductId
+     * @return string Comma-separated list of variation types
+     */
+    private function determineVariesBy(int $psProductId): string
+    {
+        $combinations = $this->client->getProductCombinations($psProductId);
+
+        if (empty($combinations)) {
+            return '';
+        }
+
+        // Get attributes from first combination to determine types
+        $attrTypes = [];
+        foreach ($combinations as $combination) {
+            $attrs = $this->client->getCombinationAttributes($combination);
+            foreach (array_keys($attrs) as $attrType) {
+                if (!in_array($attrType, $attrTypes, true)) {
+                    $attrTypes[] = $attrType;
+                }
+            }
+            // Usually all combinations have same attribute types, so check first few
+            if (count($attrTypes) > 0 && count($combinations) > 3) {
+                break;
+            }
+        }
+
+        return implode(', ', $attrTypes);
+    }
+
+    /**
+     * Parse base product name (remove variant info like " - Red, M")
+     *
+     * @param string $name
+     * @return string
+     */
+    private function parseBaseProductName(string $name): string
+    {
+        // PrestaShop often appends variant info after " - "
+        $parts = explode(' - ', $name);
+        return trim($parts[0]);
     }
 
     /**

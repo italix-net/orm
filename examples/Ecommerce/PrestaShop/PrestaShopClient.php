@@ -243,6 +243,254 @@ class PrestaShopClient
             || ($product['cache_is_pack'] ?? '0') === '1';
     }
 
+    // =========================================
+    // PRODUCT COMBINATIONS (VARIANTS)
+    // =========================================
+
+    /**
+     * Get all combinations (variants) for a product
+     *
+     * @param int $productId
+     * @return array Array of combinations
+     */
+    public function getProductCombinations(int $productId): array
+    {
+        $response = $this->request('combinations', [
+            'display' => 'full',
+            'output_format' => 'JSON',
+            'filter[id_product]' => $productId,
+        ]);
+
+        if (!$response || !isset($response['combinations'])) {
+            return [];
+        }
+
+        return $response['combinations'];
+    }
+
+    /**
+     * Get a single combination by ID
+     *
+     * @param int $combinationId
+     * @return array|null
+     */
+    public function getCombination(int $combinationId): ?array
+    {
+        $response = $this->request("combinations/{$combinationId}", [
+            'display' => 'full',
+            'output_format' => 'JSON',
+        ]);
+
+        if (!$response || !isset($response['combination'])) {
+            return null;
+        }
+
+        return $response['combination'];
+    }
+
+    /**
+     * Check if a product has combinations (is a variant parent)
+     *
+     * @param int $productId
+     * @return bool
+     */
+    public function hasProductCombinations(int $productId): bool
+    {
+        $product = $this->getProduct($productId);
+
+        if (!$product) {
+            return false;
+        }
+
+        // Check associations for combinations
+        return !empty($product['associations']['combinations']);
+    }
+
+    // =========================================
+    // PRODUCT ATTRIBUTES (size, color, etc.)
+    // =========================================
+
+    /**
+     * Get a product attribute by ID
+     *
+     * @param int $attributeId
+     * @return array|null
+     */
+    public function getProductAttribute(int $attributeId): ?array
+    {
+        $response = $this->request("product_option_values/{$attributeId}", [
+            'display' => 'full',
+            'output_format' => 'JSON',
+        ]);
+
+        if (!$response || !isset($response['product_option_value'])) {
+            return null;
+        }
+
+        return $response['product_option_value'];
+    }
+
+    /**
+     * Get a product attribute group (like "Size", "Color") by ID
+     *
+     * @param int $attributeGroupId
+     * @return array|null
+     */
+    public function getProductAttributeGroup(int $attributeGroupId): ?array
+    {
+        $response = $this->request("product_options/{$attributeGroupId}", [
+            'display' => 'full',
+            'output_format' => 'JSON',
+        ]);
+
+        if (!$response || !isset($response['product_option'])) {
+            return null;
+        }
+
+        return $response['product_option'];
+    }
+
+    /**
+     * Get all product attribute groups
+     *
+     * @return array
+     */
+    public function getProductAttributeGroups(): array
+    {
+        $response = $this->request('product_options', [
+            'display' => 'full',
+            'output_format' => 'JSON',
+        ]);
+
+        if (!$response || !isset($response['product_options'])) {
+            return [];
+        }
+
+        return $response['product_options'];
+    }
+
+    /**
+     * Get variant attributes for a combination
+     *
+     * Returns an array like ['color' => 'Red', 'size' => 'M']
+     *
+     * @param array $combination Combination data
+     * @return array
+     */
+    public function getCombinationAttributes(array $combination): array
+    {
+        $attributes = [];
+
+        // Combinations have associations with product_option_values
+        $attrValues = $combination['associations']['product_option_values'] ?? [];
+
+        foreach ($attrValues as $attrValue) {
+            $attrId = (int) ($attrValue['id'] ?? 0);
+            if ($attrId === 0) {
+                continue;
+            }
+
+            // Get the attribute value details
+            $attrDetail = $this->getProductAttribute($attrId);
+            if (!$attrDetail) {
+                continue;
+            }
+
+            // Get the attribute group (color, size, etc.)
+            $groupId = (int) ($attrDetail['id_attribute_group'] ?? 0);
+            $attrGroup = $this->getProductAttributeGroup($groupId);
+
+            // Get attribute name (localized)
+            $attrName = $this->getLocalizedValue($attrDetail['name'] ?? '');
+            $groupName = $this->getLocalizedValue($attrGroup['name'] ?? 'attribute');
+
+            // Normalize the group name for Schema.org mapping
+            $normalizedGroup = $this->normalizeAttributeName($groupName);
+            $attributes[$normalizedGroup] = $attrName;
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Normalize attribute group name to Schema.org property
+     *
+     * Maps PrestaShop attribute names like "Taglia", "Colore" to
+     * standard names like "size", "color"
+     *
+     * @param string $name
+     * @return string
+     */
+    private function normalizeAttributeName(string $name): string
+    {
+        $name = strtolower(trim($name));
+
+        // Common mappings (add more as needed)
+        $mappings = [
+            // English
+            'size' => 'size',
+            'color' => 'color',
+            'colour' => 'color',
+            'material' => 'material',
+            'pattern' => 'pattern',
+
+            // Italian
+            'taglia' => 'size',
+            'misura' => 'size',
+            'colore' => 'color',
+            'materiale' => 'material',
+            'fantasia' => 'pattern',
+            'motivo' => 'pattern',
+
+            // Spanish
+            'talla' => 'size',
+            'tamaño' => 'size',
+
+            // French
+            'taille' => 'size',
+            'couleur' => 'color',
+            'matière' => 'material',
+
+            // German
+            'größe' => 'size',
+            'farbe' => 'color',
+        ];
+
+        return $mappings[$name] ?? $name;
+    }
+
+    /**
+     * Get localized value from PrestaShop multi-language field
+     *
+     * @param mixed $value
+     * @param int $langId Preferred language ID (0 = first available)
+     * @return string
+     */
+    private function getLocalizedValue(mixed $value, int $langId = 0): string
+    {
+        if (!is_array($value)) {
+            return (string) $value;
+        }
+
+        // Multi-language format: [{'id': langId, 'value': 'text'}, ...]
+        if ($langId > 0) {
+            foreach ($value as $lang) {
+                if (isset($lang['id']) && (int) $lang['id'] === $langId && !empty($lang['value'])) {
+                    return $lang['value'];
+                }
+            }
+        }
+
+        // Return first non-empty value
+        foreach ($value as $lang) {
+            if (isset($lang['value']) && !empty($lang['value'])) {
+                return $lang['value'];
+            }
+        }
+
+        return '';
+    }
+
     /**
      * Make an API request
      *

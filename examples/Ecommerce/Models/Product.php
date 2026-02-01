@@ -181,6 +181,291 @@ class Product extends ActiveRow
         return array_map('trim', explode(',', $varies));
     }
 
+    /**
+     * Find variants matching specific attribute values
+     *
+     * @param array $attributes Key-value pairs of attributes to match
+     * @return array<Thing>
+     */
+    public function find_variants_by(array $attributes): array
+    {
+        $variants = $this->variants();
+
+        return array_filter($variants, function (Thing $variant) use ($attributes) {
+            $product = $variant->delegate();
+            if (!$product instanceof self) {
+                return false;
+            }
+
+            foreach ($attributes as $key => $value) {
+                if ($product->get_variant_attribute($key) !== $value) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Get unique values for a variant attribute across all variants
+     *
+     * @param string $attribute Attribute name (size, color, etc.)
+     * @return array
+     */
+    public function get_variant_options(string $attribute): array
+    {
+        if (!$this->is_group()) {
+            return [];
+        }
+
+        $values = [];
+        foreach ($this->variants() as $variant) {
+            $product = $variant->delegate();
+            if ($product instanceof self) {
+                $value = $product->get_variant_attribute($attribute);
+                if ($value !== null && !in_array($value, $values, true)) {
+                    $values[] = $value;
+                }
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * Get sibling variants (other variants of the same parent group)
+     *
+     * @return array<Thing>
+     */
+    public function sibling_variants(): array
+    {
+        if (!$this->is_variant()) {
+            return [];
+        }
+
+        $parent = $this->parent_group();
+        if (!$parent) {
+            return [];
+        }
+
+        $parentProduct = $parent->delegate();
+        if (!$parentProduct instanceof self) {
+            return [];
+        }
+
+        $thingId = $this['thing_id'];
+        return array_filter($parentProduct->variants(), function (Thing $variant) use ($thingId) {
+            return $variant['id'] !== $thingId;
+        });
+    }
+
+    // =========================================
+    // VARIANT ATTRIBUTES
+    // =========================================
+
+    // Standard Schema.org variant properties
+    private const STANDARD_VARIANT_ATTRIBUTES = ['size', 'size_system', 'size_group', 'color', 'material', 'pattern'];
+
+    /**
+     * Get size
+     *
+     * @return string|null
+     */
+    public function size(): ?string
+    {
+        return $this['size'];
+    }
+
+    /**
+     * Get size system (US, EU, UK, etc.)
+     *
+     * @return string|null
+     */
+    public function size_system(): ?string
+    {
+        return $this['size_system'];
+    }
+
+    /**
+     * Get size group (regular, petite, plus, etc.)
+     *
+     * @return string|null
+     */
+    public function size_group(): ?string
+    {
+        return $this['size_group'];
+    }
+
+    /**
+     * Get color
+     *
+     * @return string|null
+     */
+    public function color(): ?string
+    {
+        return $this['color'];
+    }
+
+    /**
+     * Get material
+     *
+     * @return string|null
+     */
+    public function material(): ?string
+    {
+        return $this['material'];
+    }
+
+    /**
+     * Get pattern
+     *
+     * @return string|null
+     */
+    public function pattern(): ?string
+    {
+        return $this['pattern'];
+    }
+
+    /**
+     * Get additional variant attributes (from JSON)
+     *
+     * @return array
+     */
+    public function additional_attributes(): array
+    {
+        $json = $this['variant_attributes'] ?? '';
+        if (empty($json)) {
+            return [];
+        }
+
+        $data = json_decode($json, true);
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Get a specific additional attribute
+     *
+     * @param string $key
+     * @return mixed|null
+     */
+    public function additional_attribute(string $key): mixed
+    {
+        return $this->additional_attributes()[$key] ?? null;
+    }
+
+    /**
+     * Set additional variant attributes (stores as JSON)
+     *
+     * @param array $attributes
+     * @return void
+     */
+    public function set_additional_attributes(array $attributes): void
+    {
+        $this['variant_attributes'] = json_encode($attributes, JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Add or update a single additional attribute
+     *
+     * @param string $key
+     * @param mixed $value
+     * @return void
+     */
+    public function set_additional_attribute(string $key, mixed $value): void
+    {
+        $attributes = $this->additional_attributes();
+        $attributes[$key] = $value;
+        $this->set_additional_attributes($attributes);
+    }
+
+    /**
+     * Get any variant attribute (standard or additional)
+     *
+     * @param string $attribute
+     * @return mixed|null
+     */
+    public function get_variant_attribute(string $attribute): mixed
+    {
+        // Check standard attributes first
+        if (in_array($attribute, self::STANDARD_VARIANT_ATTRIBUTES, true)) {
+            return $this[$attribute];
+        }
+
+        // Check additional attributes
+        return $this->additional_attribute($attribute);
+    }
+
+    /**
+     * Set any variant attribute (standard or additional)
+     *
+     * @param string $attribute
+     * @param mixed $value
+     * @return void
+     */
+    public function set_variant_attribute(string $attribute, mixed $value): void
+    {
+        if (in_array($attribute, self::STANDARD_VARIANT_ATTRIBUTES, true)) {
+            $this[$attribute] = $value;
+        } else {
+            $this->set_additional_attribute($attribute, $value);
+        }
+    }
+
+    /**
+     * Get all variant attributes as a flat array
+     *
+     * @return array
+     */
+    public function all_variant_attributes(): array
+    {
+        $attrs = [];
+
+        // Collect standard attributes
+        foreach (self::STANDARD_VARIANT_ATTRIBUTES as $attr) {
+            if ($this[$attr] !== null) {
+                $attrs[$attr] = $this[$attr];
+            }
+        }
+
+        // Merge additional attributes
+        return array_merge($attrs, $this->additional_attributes());
+    }
+
+    /**
+     * Get the variant description string (e.g., "Red, Size M")
+     *
+     * @return string
+     */
+    public function variant_description(): string
+    {
+        $parts = [];
+
+        // Use varies_by order from parent if available
+        $parent = $this->parent_group();
+        if ($parent) {
+            $parentProduct = $parent->delegate();
+            if ($parentProduct instanceof self) {
+                foreach ($parentProduct->varies_by() as $attr) {
+                    $value = $this->get_variant_attribute($attr);
+                    if ($value !== null) {
+                        $parts[] = $value;
+                    }
+                }
+                return implode(', ', $parts);
+            }
+        }
+
+        // Fallback: use all set attributes
+        $attrs = $this->all_variant_attributes();
+        foreach ($attrs as $value) {
+            if ($value !== null) {
+                $parts[] = $value;
+            }
+        }
+
+        return implode(', ', $parts);
+    }
+
     // =========================================
     // IDENTIFIERS
     // =========================================
@@ -270,6 +555,57 @@ class Product extends ActiveRow
         // ProductGroup-specific
         if ($this->is_group() && $this['varies_by']) {
             $schema['variesBy'] = $this->varies_by();
+
+            // Include hasVariant for variants
+            $variants = $this->variants();
+            if (!empty($variants)) {
+                $schema['hasVariant'] = array_map(function (Thing $variant) {
+                    $product = $variant->delegate();
+                    if ($product instanceof self) {
+                        return $product->to_schema_org($variant);
+                    }
+                    return null;
+                }, $variants);
+                $schema['hasVariant'] = array_filter($schema['hasVariant']);
+            }
+        }
+
+        // Variant-specific properties
+        if ($this->is_variant()) {
+            // Add link to parent group
+            if ($this['variant_of_id']) {
+                $schema['isVariantOf'] = [
+                    '@type' => 'ProductGroup',
+                    '@id' => '#product-group-' . $this['variant_of_id'],
+                ];
+            }
+
+            // Standard variant attributes
+            if ($this['size']) {
+                $schema['size'] = $this['size'];
+            }
+            if ($this['color']) {
+                $schema['color'] = $this['color'];
+            }
+            if ($this['material']) {
+                $schema['material'] = $this['material'];
+            }
+            if ($this['pattern']) {
+                $schema['pattern'] = $this['pattern'];
+            }
+
+            // Additional properties using Schema.org PropertyValue
+            $additional = $this->additional_attributes();
+            if (!empty($additional)) {
+                $schema['additionalProperty'] = [];
+                foreach ($additional as $name => $value) {
+                    $schema['additionalProperty'][] = [
+                        '@type' => 'PropertyValue',
+                        'name' => $name,
+                        'value' => $value,
+                    ];
+                }
+            }
         }
 
         return $schema;

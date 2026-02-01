@@ -47,6 +47,8 @@ class EcommerceTestRunner
 
         $this->test_product_creation();
         $this->test_product_group();
+        $this->test_variant_attributes();
+        $this->test_find_variants_by();
         $this->test_order_creation();
         $this->test_order_items();
         $this->test_order_totals();
@@ -186,6 +188,164 @@ class EcommerceTestRunner
         // Test variants() method
         $variants = $tshirt_group->delegate()->variants();
         $this->assert('ProductGroup has 3 variants', count($variants) === 3);
+
+        echo "\n";
+    }
+
+    private function test_variant_attributes(): void
+    {
+        echo "Variant Attributes (Size, Color, etc.)\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create a ProductGroup with size and color variations
+        $dress = Thing::create_product_group([
+            'name' => 'Summer Dress',
+            'description' => 'Elegant summer dress',
+        ], [
+            'sku' => 'DRESS-SUMMER',
+            'brand' => 'FashionCo',
+            'varies_by' => 'color, size',
+        ]);
+
+        // Create variants using the new create_variant method
+        $red_small = Thing::create_variant($dress, [
+            'color' => 'Red',
+            'size' => 'S',
+            'material' => '100% Cotton',
+        ], [
+            'sku' => 'DRESS-SUMMER-RED-S',
+            'price' => 79.99,
+            'inventory_level' => 25,
+        ]);
+
+        $red_medium = Thing::create_variant($dress, [
+            'color' => 'Red',
+            'size' => 'M',
+        ], [
+            'sku' => 'DRESS-SUMMER-RED-M',
+            'price' => 79.99,
+            'inventory_level' => 30,
+        ]);
+
+        $blue_small = Thing::create_variant($dress, [
+            'color' => 'Navy Blue',
+            'size' => 'S',
+        ], [
+            'sku' => 'DRESS-SUMMER-BLUE-S',
+            'price' => 79.99,
+            'inventory_level' => 20,
+        ]);
+
+        $blue_large = Thing::create_variant($dress, [
+            'color' => 'Navy Blue',
+            'size' => 'L',
+            'pattern' => 'Striped',
+        ], [
+            'sku' => 'DRESS-SUMMER-BLUE-L',
+            'price' => 84.99,
+            'inventory_level' => 15,
+        ]);
+
+        // Test variant attribute getters
+        $red_small_product = $red_small->delegate();
+        $this->assert('Variant has color Red', $red_small_product->color() === 'Red');
+        $this->assert('Variant has size S', $red_small_product->size() === 'S');
+        $this->assert('Variant has material', $red_small_product->material() === '100% Cotton');
+
+        $blue_large_product = $blue_large->delegate();
+        $this->assert('Variant pattern works', $blue_large_product->pattern() === 'Striped');
+
+        // Test get_variant_attribute for standard
+        $this->assert('get_variant_attribute color', $red_small_product->get_variant_attribute('color') === 'Red');
+        $this->assert('get_variant_attribute size', $red_small_product->get_variant_attribute('size') === 'S');
+
+        // Test all_variant_attributes
+        $all_attrs = $red_small_product->all_variant_attributes();
+        $this->assert('all_variant_attributes has color', isset($all_attrs['color']));
+        $this->assert('all_variant_attributes has size', isset($all_attrs['size']));
+        $this->assert('all_variant_attributes has material', isset($all_attrs['material']));
+
+        // Test variant_description
+        $desc = $red_small_product->variant_description();
+        $this->assert('variant_description contains Red', strpos($desc, 'Red') !== false);
+        $this->assert('variant_description contains S', strpos($desc, 'S') !== false);
+
+        // Test auto-generated name
+        $this->assert('Variant name auto-generated', strpos($red_small['name'], 'Summer Dress') !== false);
+        $this->assert('Variant name includes Red', strpos($red_small['name'], 'Red') !== false);
+
+        // Test get_variant_options on parent group
+        $dress_product = $dress->delegate();
+        $colors = $dress_product->get_variant_options('color');
+        $sizes = $dress_product->get_variant_options('size');
+
+        $this->assert('get_variant_options returns colors', count($colors) === 2);
+        $this->assert('Colors include Red', in_array('Red', $colors));
+        $this->assert('Colors include Navy Blue', in_array('Navy Blue', $colors));
+        $this->assert('Sizes include S', in_array('S', $sizes));
+        $this->assert('Sizes include M', in_array('M', $sizes));
+        $this->assert('Sizes include L', in_array('L', $sizes));
+
+        echo "\n";
+    }
+
+    private function test_find_variants_by(): void
+    {
+        echo "Find Variants By Attributes\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create another product group for testing
+        $tshirt = Thing::create_product_group([
+            'name' => 'Basic T-Shirt',
+            'description' => 'Everyday basic tee',
+        ], [
+            'sku' => 'TSHIRT-BASIC',
+            'brand' => 'BasicWear',
+            'varies_by' => 'color, size',
+        ]);
+
+        // Create variants with size and color
+        $variants_data = [
+            ['color' => 'White', 'size' => 'S'],
+            ['color' => 'White', 'size' => 'M'],
+            ['color' => 'White', 'size' => 'L'],
+            ['color' => 'Black', 'size' => 'S'],
+            ['color' => 'Black', 'size' => 'M'],
+            ['color' => 'Black', 'size' => 'L'],
+            ['color' => 'Grey', 'size' => 'M'],
+        ];
+
+        foreach ($variants_data as $i => $attrs) {
+            Thing::create_variant($tshirt, $attrs, [
+                'sku' => 'TSHIRT-BASIC-' . $attrs['color'] . '-' . $attrs['size'],
+                'price' => 14.99,
+                'inventory_level' => 50,
+            ]);
+        }
+
+        $tshirt_product = $tshirt->delegate();
+
+        // Find all white variants
+        $white_variants = $tshirt_product->find_variants_by(['color' => 'White']);
+        $this->assert('find_variants_by color=White returns 3', count($white_variants) === 3);
+
+        // Find all medium variants
+        $medium_variants = $tshirt_product->find_variants_by(['size' => 'M']);
+        $this->assert('find_variants_by size=M returns 3', count($medium_variants) === 3);
+
+        // Find specific combination
+        $black_large = $tshirt_product->find_variants_by(['color' => 'Black', 'size' => 'L']);
+        $this->assert('find_variants_by color+size returns 1', count($black_large) === 1);
+
+        // Find non-existent combination
+        $grey_large = $tshirt_product->find_variants_by(['color' => 'Grey', 'size' => 'L']);
+        $this->assert('find_variants_by non-existent returns 0', count($grey_large) === 0);
+
+        // Test sibling_variants
+        $first_variant = $tshirt_product->variants()[0];
+        $first_product = $first_variant->delegate();
+        $siblings = $first_product->sibling_variants();
+        $this->assert('sibling_variants returns 6 (all except self)', count($siblings) === 6);
 
         echo "\n";
     }

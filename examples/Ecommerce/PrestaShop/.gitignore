@@ -1,0 +1,15 @@
+# PrestaShop Import - ignored files
+
+# Configuration with secrets
+config.php
+
+# SQLite database
+*.db
+*.sqlite
+
+# Log files
+*.log
+import.log
+
+# Temporary files
+*.tmp

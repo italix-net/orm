@@ -467,6 +467,118 @@ class Product extends ActiveRow
     }
 
     // =========================================
+    // VIRTUAL PRODUCT SUPPORT
+    // =========================================
+
+    /**
+     * Check if this is a virtual product (not physical)
+     *
+     * Virtual products include downloadable files and services.
+     * They are not shipped to customers.
+     *
+     * @return bool
+     */
+    public function is_virtual(): bool
+    {
+        return (bool) ($this['is_virtual'] ?? false);
+    }
+
+    /**
+     * Check if this is a downloadable product
+     *
+     * @return bool
+     */
+    public function is_downloadable(): bool
+    {
+        return (bool) ($this['is_downloadable'] ?? false);
+    }
+
+    /**
+     * Check if this is a service product
+     *
+     * @return bool
+     */
+    public function is_service(): bool
+    {
+        return (bool) ($this['is_service'] ?? false);
+    }
+
+    /**
+     * Check if this is a physical product (requires shipping)
+     *
+     * @return bool
+     */
+    public function is_physical(): bool
+    {
+        return !$this->is_virtual();
+    }
+
+    /**
+     * Get download URL (for downloadable products)
+     *
+     * @return string|null
+     */
+    public function download_url(): ?string
+    {
+        return $this['download_url'];
+    }
+
+    /**
+     * Get download limit (max downloads allowed)
+     *
+     * @return int|null
+     */
+    public function download_limit(): ?int
+    {
+        return $this['download_limit'] !== null ? (int) $this['download_limit'] : null;
+    }
+
+    /**
+     * Get download expiry days
+     *
+     * @return int|null
+     */
+    public function download_expiry_days(): ?int
+    {
+        return $this['download_expiry_days'] !== null ? (int) $this['download_expiry_days'] : null;
+    }
+
+    /**
+     * Get service duration (for service products)
+     *
+     * @return string|null
+     */
+    public function service_duration(): ?string
+    {
+        return $this['service_duration'];
+    }
+
+    /**
+     * Get product type description
+     *
+     * @return string
+     */
+    public function product_type(): string
+    {
+        if ($this->is_group()) {
+            return 'ProductGroup';
+        }
+        if ($this->is_variant()) {
+            return 'ProductVariant';
+        }
+        if ($this->is_downloadable()) {
+            return 'DownloadableProduct';
+        }
+        if ($this->is_service()) {
+            return 'ServiceProduct';
+        }
+        if ($this->is_virtual()) {
+            return 'VirtualProduct';
+        }
+        return 'Product';
+    }
+
+    // =========================================
     // IDENTIFIERS
     // =========================================
 
@@ -512,12 +624,27 @@ class Product extends ActiveRow
      */
     public function to_schema_org(Thing $thing): array
     {
+        // Determine @type based on product type
+        $type = 'Product';
+        if ($this->is_group()) {
+            $type = 'ProductGroup';
+        } elseif ($this->is_service()) {
+            $type = 'Service';
+        }
+
         $schema = [
             '@context' => 'https://schema.org',
-            '@type' => $this->is_group() ? 'ProductGroup' : 'Product',
+            '@type' => $type,
             'name' => $thing['name'],
             'description' => $thing['description'],
         ];
+
+        // Add additionalType for virtual/downloadable products
+        if ($this->is_downloadable()) {
+            $schema['additionalType'] = 'https://schema.org/DigitalDocument';
+        } elseif ($this->is_virtual() && !$this->is_service()) {
+            $schema['additionalType'] = 'https://schema.org/Intangible';
+        }
 
         if ($this['sku']) {
             $schema['sku'] = $this['sku'];

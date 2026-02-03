@@ -144,6 +144,21 @@ class Schema
             // Physical properties
             'weight'      => decimal(10, 3),                // Weight in kg
             'weight_unit' => varchar(10)->default('kg'),
+
+            // ===================================================
+            // VIRTUAL PRODUCT SUPPORT
+            // ===================================================
+            // @see https://schema.org/Product (additionalType: DigitalDocument/Service)
+            // PrestaShop virtual products: downloadable files or services
+            'is_virtual'     => boolean()->default(false),  // True if not a physical product
+            'is_downloadable' => boolean()->default(false), // True if has downloadable file
+            'download_url'   => varchar(500),               // URL to download file
+            'download_limit' => integer(),                  // Max number of downloads allowed
+            'download_expiry_days' => integer(),            // Days until download expires
+
+            // Service product properties
+            'is_service'     => boolean()->default(false),  // True if this is a service
+            'service_duration' => varchar(50),              // e.g., "1 hour", "30 days"
         ], 'sqlite');
 
         // =====================================================
@@ -326,6 +341,13 @@ class Schema
             // Relationships
             'order_thing_id'   => bigint()->not_null(),    // FK to Order's thing_id
             'product_thing_id' => bigint()->not_null(),    // FK to Product's thing_id
+
+            // ===================================================
+            // BUNDLE/PACK RELATIONSHIPS
+            // ===================================================
+            // For tracking items that are part of a product bundle/pack
+            'parent_bundle_item_id' => bigint(),            // FK to parent OrderItem thing_id (if part of bundle)
+            'is_bundle_component'  => boolean()->default(false), // True if this item is part of a bundle
 
             // Item identifiers
             'order_item_number' => varchar(50),             // Line item number

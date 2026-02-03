@@ -13,6 +13,8 @@ namespace Examples\Ecommerce\Models;
 use Italix\Orm\ActiveRow\ActiveRow;
 use Italix\Orm\ActiveRow\Traits\Persistable;
 
+use function Italix\Orm\Operators\eq;
+
 class OrderItem extends ActiveRow
 {
     use Persistable;
@@ -125,6 +127,79 @@ class OrderItem extends ActiveRow
         $symbol = $symbols[$currency] ?? $currency . ' ';
 
         return $symbol . number_format($price, 2);
+    }
+
+    // =========================================
+    // BUNDLE/PACK SUPPORT
+    // =========================================
+
+    /**
+     * Check if this item is part of a bundle/pack
+     *
+     * @return bool
+     */
+    public function is_bundle_component(): bool
+    {
+        return (bool) ($this['is_bundle_component'] ?? false);
+    }
+
+    /**
+     * Check if this item is a bundle/pack (contains other items)
+     *
+     * @return bool
+     */
+    public function is_bundle(): bool
+    {
+        $product = $this->product();
+        if (!$product) {
+            return false;
+        }
+        $delegate = $product->delegate();
+        return $delegate instanceof Product && $delegate->is_group();
+    }
+
+    /**
+     * Get the parent bundle item (if this is a component)
+     *
+     * @return Thing|null
+     */
+    public function parent_bundle_item(): ?Thing
+    {
+        $parentId = $this['parent_bundle_item_id'];
+        if (!$parentId) {
+            return null;
+        }
+        return Thing::find_with_delegate($parentId);
+    }
+
+    /**
+     * Get bundle component items (if this is a bundle)
+     *
+     * @return array<Thing>
+     */
+    public function bundle_components(): array
+    {
+        if (!$this->is_bundle()) {
+            return [];
+        }
+
+        $thingId = $this['thing_id'];
+        $table = self::get_table();
+
+        // Find all items with this item as parent
+        $components = self::find_all([
+            'where' => eq($table->parent_bundle_item_id, $thingId),
+        ]);
+
+        $things = [];
+        foreach ($components as $component) {
+            $thing = Thing::find_with_delegate($component['thing_id']);
+            if ($thing) {
+                $things[] = $thing;
+            }
+        }
+
+        return $things;
     }
 
     // =========================================

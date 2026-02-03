@@ -375,8 +375,9 @@ class ImportOrders
      *
      * @param Thing $order The order Thing
      * @param array $item PrestaShop order row data
+     * @return Thing|null The created order item
      */
-    private function importOrderItem(Thing $order, array $item): void
+    private function importOrderItem(Thing $order, array $item): ?Thing
     {
         $productId = (int) $item['product_id'];
         $combinationId = (int) ($item['product_attribute_id'] ?? 0);
@@ -389,40 +390,62 @@ class ImportOrders
 
         if (!$product) {
             $this->error("    Could not create product for item: {$productName}");
-            return;
+            return null;
         }
 
-        // Check if this is a bundle/pack product
-        $isPack = $this->client->isProductPack($productId);
+        // Get product type info
+        $typeInfo = $this->client->getProductTypeInfo($productId);
+        $isPack = $typeInfo['is_pack'];
+        $isVirtual = $typeInfo['is_virtual'];
+
+        // Build description based on product type
+        $description = null;
+        if ($isPack) {
+            $description = 'Product Bundle';
+        } elseif ($typeInfo['is_downloadable']) {
+            $description = 'Downloadable Product';
+        } elseif ($isVirtual) {
+            $description = 'Virtual Product/Service';
+        }
 
         // Create order item
         $orderItem = Thing::create_order_item($order, $product, $quantity, [
             'name' => $productName,
-            'description' => $isPack ? 'Product Bundle' : null,
+            'description' => $description,
         ], [
             'order_item_number' => "ITEM-{$item['id']}",
             'unit_price' => $unitPrice,
             'line_total' => $unitPrice * $quantity,
             'order_item_status' => $order->delegate()->status(),
+            'is_bundle_component' => false, // This is a top-level item, not a component
         ]);
 
         $this->itemsCreated++;
 
-        // If it's a pack, also import the pack items as sub-items (optional)
+        // If it's a pack, also import the pack items as sub-items with parent reference
         if ($isPack) {
-            $this->importPackItems($order, $product, $productId, $quantity);
+            $this->importPackItems($order, $orderItem, $productId, $quantity);
         }
+
+        // Log product type
+        $typeLabel = $typeInfo['type'];
+        if ($combinationId > 0) {
+            $typeLabel = 'variant';
+        }
+        $this->log("    Item: {$productName} (type: {$typeLabel})");
+
+        return $orderItem;
     }
 
     /**
      * Import pack/bundle items
      *
      * @param Thing $order The order
-     * @param Thing $packProduct The pack product
+     * @param Thing $parentOrderItem The parent bundle order item (for tracking relationship)
      * @param int $psProductId PrestaShop product ID
      * @param int $packQuantity Quantity of packs ordered
      */
-    private function importPackItems(Thing $order, Thing $packProduct, int $psProductId, int $packQuantity): void
+    private function importPackItems(Thing $order, Thing $parentOrderItem, int $psProductId, int $packQuantity): void
     {
         $packItems = $this->client->getPackItems($psProductId);
 
@@ -430,11 +453,12 @@ class ImportOrders
             return;
         }
 
-        $this->log("      Importing {" . count($packItems) . "} bundle items...");
+        $this->log("      Importing " . count($packItems) . " bundle items...");
 
         foreach ($packItems as $packItem) {
             $itemProductId = (int) ($packItem['id'] ?? $packItem['id_product'] ?? 0);
             $itemQuantity = (int) ($packItem['quantity'] ?? 1);
+            $itemCombinationId = (int) ($packItem['id_product_attribute'] ?? 0);
 
             if ($itemProductId === 0) {
                 continue;
@@ -447,25 +471,37 @@ class ImportOrders
             }
 
             $productName = $this->getProductName($psProduct);
-            $product = $this->getOrCreateProduct($itemProductId, $productName, []);
+
+            // Handle bundle items that may have combinations (variants)
+            $product = null;
+            if ($itemCombinationId > 0) {
+                $product = $this->getOrCreateProductWithVariant($itemProductId, $itemCombinationId, $productName, []);
+            } else {
+                $product = $this->getOrCreateProduct($itemProductId, $productName, []);
+            }
 
             if (!$product) {
                 continue;
             }
 
-            // Create order item for bundle component
-            // Mark it as part of a bundle with a special naming convention
+            // Get parent order item name for reference
+            $bundleName = $parentOrderItem['name'] ?? 'Bundle';
+
+            // Create order item for bundle component with parent reference
             Thing::create_order_item($order, $product, $itemQuantity * $packQuantity, [
-                'name' => "[Bundle: {$packProduct['name']}] {$productName}",
+                'name' => "[Bundle: {$bundleName}] {$productName}",
                 'description' => "Part of bundle product",
             ], [
                 'order_item_number' => "BUNDLE-{$psProductId}-{$itemProductId}",
                 'unit_price' => 0, // Bundle items have 0 price (price is on the bundle)
                 'line_total' => 0,
                 'order_item_status' => $order->delegate()->status(),
+                'parent_bundle_item_id' => $parentOrderItem['id'], // Link to parent bundle item
+                'is_bundle_component' => true,
             ]);
 
             $this->itemsCreated++;
+            $this->log("        - {$productName} x{$itemQuantity}");
         }
     }
 
@@ -654,6 +690,11 @@ class ImportOrders
     /**
      * Get or create a product in the local database
      *
+     * Handles all PrestaShop product types:
+     * - Simple products (physical)
+     * - Virtual products (downloadable files, services)
+     * - Product packs/bundles
+     *
      * @param int $psProductId PrestaShop product ID
      * @param string $name Product name
      * @param array $itemData Additional item data
@@ -684,16 +725,14 @@ class ImportOrders
         $sku = $itemData['product_reference'] ?? $psProduct['reference'] ?? "PS-{$psProductId}";
         $price = (float) ($itemData['unit_price_tax_incl'] ?? $psProduct['price'] ?? 0);
 
-        // Determine if it's a bundle
-        $isPack = ($psProduct['type'] ?? '') === 'pack'
-            || ($psProduct['cache_is_pack'] ?? '0') === '1';
+        // Get detailed product type info
+        $typeInfo = $this->client->getProductTypeInfo($psProductId);
 
-        // Create the product
-        $product = Thing::create_product([
-            'name' => $name,
-            'description' => $this->getProductDescription($psProduct),
-            'url' => $this->config['prestashop_url'] . '/index.php?id_product=' . $psProductId . '&controller=product',
-        ], [
+        // Determine if it's a bundle
+        $isPack = $typeInfo['is_pack'];
+
+        // Build product data
+        $productData = [
             'sku' => $sku,
             'gtin' => $psProduct['ean13'] ?? null,
             'brand' => $psProduct['manufacturer_name'] ?? null,
@@ -702,12 +741,34 @@ class ImportOrders
             'availability' => ((int)($psProduct['quantity'] ?? 0)) > 0 ? 'InStock' : 'OutOfStock',
             'inventory_level' => (int) ($psProduct['quantity'] ?? 0),
             'is_group' => $isPack, // Mark bundles as ProductGroup
-        ]);
+
+            // Virtual product fields
+            'is_virtual' => $typeInfo['is_virtual'],
+            'is_downloadable' => $typeInfo['is_downloadable'],
+            'is_service' => $typeInfo['is_virtual'] && !$typeInfo['is_downloadable'],
+        ];
+
+        // Add download info for downloadable products
+        if ($typeInfo['is_downloadable'] && $typeInfo['download_info']) {
+            $downloadInfo = $typeInfo['download_info'];
+            $productData['download_limit'] = $downloadInfo['nb_downloadable'] ?? null;
+            $productData['download_expiry_days'] = $downloadInfo['nb_days_accessible'] ?? null;
+            // Note: download_url is typically generated per-order, not stored on product
+        }
+
+        // Create the product
+        $product = Thing::create_product([
+            'name' => $name,
+            'description' => $this->getProductDescription($psProduct),
+            'url' => $this->config['prestashop_url'] . '/index.php?id_product=' . $psProductId . '&controller=product',
+        ], $productData);
 
         $this->productCache[$cacheKey] = $product;
         $this->productsCreated++;
 
-        $this->log("    Created product: {$name} (SKU: {$sku})" . ($isPack ? ' [BUNDLE]' : ''));
+        // Log with product type
+        $typeLabel = $typeInfo['type'];
+        $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$typeLabel}]");
 
         return $product;
     }

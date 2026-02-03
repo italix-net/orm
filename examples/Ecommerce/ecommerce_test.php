@@ -53,10 +53,12 @@ class EcommerceTestRunner
         $this->test_product_group();
         $this->test_variant_attributes();
         $this->test_find_variants_by();
+        $this->test_virtual_products();
         $this->test_customer_creation();
         $this->test_postal_address();
         $this->test_order_creation();
         $this->test_order_items();
+        $this->test_bundle_order_items();
         $this->test_order_totals();
         $this->test_customer_order_history();
         $this->test_type_checking();
@@ -366,6 +368,74 @@ class EcommerceTestRunner
         echo "\n";
     }
 
+    private function test_virtual_products(): void
+    {
+        echo "Virtual Products (Downloadable/Service)\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create a downloadable product (e-book)
+        $ebook = Thing::create_product([
+            'name' => 'PHP Design Patterns E-Book',
+            'description' => 'Comprehensive guide to PHP design patterns',
+        ], [
+            'sku' => 'EBOOK-PHP-001',
+            'price' => 29.99,
+            'is_virtual' => true,
+            'is_downloadable' => true,
+            'download_url' => 'https://example.com/downloads/php-patterns.pdf',
+            'download_limit' => 5,
+            'download_expiry_days' => 365,
+        ]);
+
+        $ebookDelegate = $ebook->delegate();
+        $this->assert('E-book is virtual', $ebookDelegate->is_virtual() === true);
+        $this->assert('E-book is downloadable', $ebookDelegate->is_downloadable() === true);
+        $this->assert('E-book is not physical', $ebookDelegate->is_physical() === false);
+        $this->assert('E-book is not service', $ebookDelegate->is_service() === false);
+        $this->assert('E-book download_limit is 5', $ebookDelegate->download_limit() === 5);
+        $this->assert('E-book download_expiry_days is 365', $ebookDelegate->download_expiry_days() === 365);
+        $this->assert('E-book product_type is DownloadableProduct', $ebookDelegate->product_type() === 'DownloadableProduct');
+
+        // Create a service product (consultation)
+        $consultation = Thing::create_product([
+            'name' => 'PHP Code Review Service',
+            'description' => '1-hour code review session with a senior developer',
+        ], [
+            'sku' => 'SERVICE-REVIEW-001',
+            'price' => 150.00,
+            'is_virtual' => true,
+            'is_service' => true,
+            'service_duration' => '1 hour',
+        ]);
+
+        $serviceDelegate = $consultation->delegate();
+        $this->assert('Service is virtual', $serviceDelegate->is_virtual() === true);
+        $this->assert('Service is not downloadable', $serviceDelegate->is_downloadable() === false);
+        $this->assert('Service is_service is true', $serviceDelegate->is_service() === true);
+        $this->assert('Service product_type is ServiceProduct', $serviceDelegate->product_type() === 'ServiceProduct');
+        $this->assert('Service duration is correct', $serviceDelegate->service_duration() === '1 hour');
+
+        // Create a physical product for comparison
+        $physicalProduct = Thing::create_product([
+            'name' => 'PHP Book (Printed)',
+        ], [
+            'sku' => 'BOOK-PHP-001',
+            'price' => 49.99,
+        ]);
+
+        $physicalDelegate = $physicalProduct->delegate();
+        $this->assert('Physical product is not virtual', $physicalDelegate->is_virtual() === false);
+        $this->assert('Physical product is_physical is true', $physicalDelegate->is_physical() === true);
+        $this->assert('Physical product_type is Product', $physicalDelegate->product_type() === 'Product');
+
+        // Test Schema.org output for virtual products
+        $schema = $ebookDelegate->to_schema_org($ebook);
+        $this->assert('Schema.org has additionalType for downloadable', isset($schema['additionalType']));
+        $this->assert('Schema.org additionalType is DigitalDocument', str_contains($schema['additionalType'], 'DigitalDocument'));
+
+        echo "\n";
+    }
+
     private function test_customer_creation(): void
     {
         echo "Customer Creation (Person/Organization)\n";
@@ -654,6 +724,137 @@ class EcommerceTestRunner
         $item_product = $delegate1->product();
         $this->assert('Item->product() returns Product', $item_product !== null);
         $this->assert('Item product is correct', $item_product['id'] === $product1['id']);
+
+        echo "\n";
+    }
+
+    private function test_bundle_order_items(): void
+    {
+        echo "Bundle/Pack Order Items\n";
+        echo str_repeat('-', 30) . "\n";
+
+        // Create a product bundle (starter kit)
+        $bundle = Thing::create_product_group([
+            'name' => 'PHP Developer Starter Kit',
+            'description' => 'Everything you need to start PHP development',
+        ], [
+            'sku' => 'BUNDLE-PHP-STARTER',
+            'price' => 199.99,
+        ]);
+
+        // Create bundle component products
+        $book = Thing::create_product(['name' => 'PHP Programming Book'], [
+            'sku' => 'BOOK-PHP-PROG',
+            'price' => 49.99,
+        ]);
+
+        $course = Thing::create_product([
+            'name' => 'PHP Video Course',
+        ], [
+            'sku' => 'COURSE-PHP-001',
+            'price' => 99.99,
+            'is_virtual' => true,
+            'is_downloadable' => true,
+        ]);
+
+        $tools = Thing::create_product(['name' => 'PHP IDE License'], [
+            'sku' => 'LICENSE-IDE-001',
+            'price' => 79.99,
+            'is_virtual' => true,
+            'is_service' => true,
+        ]);
+
+        // Create customer and address
+        $customer = Customer::create_person([
+            'email' => 'bundle.buyer@example.com',
+        ], [
+            'given_name' => 'Bundle',
+            'family_name' => 'Buyer',
+        ]);
+
+        $address = PostalAddress::make_address([
+            'street_address' => '123 Bundle Street',
+            'address_locality' => 'BundleCity',
+            'is_billing' => true,
+            'is_shipping' => true,
+        ], $customer);
+
+        // Create order with bundle
+        $order = Thing::create_order_for_customer($customer, $address, null, [
+            'name' => 'Bundle Test Order',
+        ], [
+            'order_number' => 'ORD-BUNDLE-001',
+        ]);
+
+        // Create main bundle order item
+        $bundleItem = Thing::create_order_item($order, $bundle, 1, [
+            'name' => 'PHP Developer Starter Kit',
+        ], [
+            'order_item_number' => 'ITEM-BUNDLE-001',
+            'unit_price' => 199.99,
+            'is_bundle_component' => false,
+        ]);
+
+        // Create component items (part of bundle)
+        $bookItem = Thing::create_order_item($order, $book, 1, [
+            'name' => '[Bundle: PHP Developer Starter Kit] PHP Programming Book',
+        ], [
+            'order_item_number' => 'ITEM-BUNDLE-001-A',
+            'unit_price' => 0,
+            'line_total' => 0,
+            'parent_bundle_item_id' => $bundleItem['id'],
+            'is_bundle_component' => true,
+        ]);
+
+        $courseItem = Thing::create_order_item($order, $course, 1, [
+            'name' => '[Bundle: PHP Developer Starter Kit] PHP Video Course',
+        ], [
+            'order_item_number' => 'ITEM-BUNDLE-001-B',
+            'unit_price' => 0,
+            'line_total' => 0,
+            'parent_bundle_item_id' => $bundleItem['id'],
+            'is_bundle_component' => true,
+        ]);
+
+        $toolsItem = Thing::create_order_item($order, $tools, 1, [
+            'name' => '[Bundle: PHP Developer Starter Kit] PHP IDE License',
+        ], [
+            'order_item_number' => 'ITEM-BUNDLE-001-C',
+            'unit_price' => 0,
+            'line_total' => 0,
+            'parent_bundle_item_id' => $bundleItem['id'],
+            'is_bundle_component' => true,
+        ]);
+
+        // Test bundle item properties
+        $bundleDelegate = $bundleItem->delegate();
+        $this->assert('Bundle item is_bundle_component is false', $bundleDelegate->is_bundle_component() === false);
+        $this->assert('Bundle item is_bundle is true', $bundleDelegate->is_bundle() === true);
+
+        // Test component item properties
+        $bookDelegate = $bookItem->delegate();
+        $this->assert('Component item is_bundle_component is true', $bookDelegate->is_bundle_component() === true);
+        $this->assert('Component item is_bundle is false', $bookDelegate->is_bundle() === false);
+
+        // Test parent_bundle_item relationship
+        $parentItem = $bookDelegate->parent_bundle_item();
+        $this->assert('Component has parent_bundle_item', $parentItem !== null);
+        $this->assert('Parent bundle item is correct', $parentItem['id'] === $bundleItem['id']);
+
+        // Test bundle_components relationship
+        $components = $bundleDelegate->bundle_components();
+        $this->assert('Bundle has 3 components', count($components) === 3);
+
+        // Verify component products include virtual products
+        $hasVirtualComponent = false;
+        foreach ($components as $component) {
+            $product = $component->delegate()->product();
+            if ($product && $product->delegate()->is_virtual()) {
+                $hasVirtualComponent = true;
+                break;
+            }
+        }
+        $this->assert('Bundle includes virtual product components', $hasVirtualComponent === true);
 
         echo "\n";
     }

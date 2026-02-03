@@ -243,6 +243,101 @@ class PrestaShopClient
             || ($product['cache_is_pack'] ?? '0') === '1';
     }
 
+    /**
+     * Check if a product is virtual (not physical)
+     *
+     * Virtual products in PrestaShop include downloadable files and services.
+     * They are not shipped to customers.
+     *
+     * @param int $productId
+     * @return bool
+     */
+    public function isProductVirtual(int $productId): bool
+    {
+        $product = $this->getProduct($productId);
+
+        if (!$product) {
+            return false;
+        }
+
+        // In PrestaShop, is_virtual = 1 indicates a virtual product
+        return ($product['is_virtual'] ?? '0') === '1';
+    }
+
+    /**
+     * Get virtual product download info
+     *
+     * Returns download details for a virtual product (file, expiration, etc.)
+     *
+     * @param int $productId
+     * @return array|null
+     */
+    public function getProductDownloadInfo(int $productId): ?array
+    {
+        $response = $this->request('product_downloads', [
+            'display' => 'full',
+            'output_format' => 'JSON',
+            'filter[id_product]' => $productId,
+        ]);
+
+        if (!$response || empty($response['product_downloads'])) {
+            return null;
+        }
+
+        // Return first download info (products typically have one download)
+        return $response['product_downloads'][0] ?? null;
+    }
+
+    /**
+     * Get product type information
+     *
+     * Returns detailed product type info: simple, pack, virtual, combinations
+     *
+     * @param int $productId
+     * @return array
+     */
+    public function getProductTypeInfo(int $productId): array
+    {
+        $product = $this->getProduct($productId);
+
+        if (!$product) {
+            return [
+                'type' => 'unknown',
+                'is_virtual' => false,
+                'is_pack' => false,
+                'has_combinations' => false,
+                'is_downloadable' => false,
+            ];
+        }
+
+        $isVirtual = ($product['is_virtual'] ?? '0') === '1';
+        $isPack = ($product['type'] ?? '') === 'pack' || ($product['cache_is_pack'] ?? '0') === '1';
+        $hasCombinations = !empty($product['associations']['combinations']);
+
+        // Check if there's a downloadable file
+        $downloadInfo = $isVirtual ? $this->getProductDownloadInfo($productId) : null;
+        $isDownloadable = $downloadInfo !== null && !empty($downloadInfo['filename']);
+
+        // Determine primary type
+        $type = 'simple';
+        if ($isPack) {
+            $type = 'pack';
+        } elseif ($hasCombinations) {
+            $type = 'combinations';
+        } elseif ($isVirtual) {
+            $type = $isDownloadable ? 'downloadable' : 'service';
+        }
+
+        return [
+            'type' => $type,
+            'is_virtual' => $isVirtual,
+            'is_pack' => $isPack,
+            'has_combinations' => $hasCombinations,
+            'is_downloadable' => $isDownloadable,
+            'download_info' => $downloadInfo,
+        ];
+    }
+
     // =========================================
     // PRODUCT COMBINATIONS (VARIANTS)
     // =========================================

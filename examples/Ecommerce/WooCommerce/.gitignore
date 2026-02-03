@@ -1,0 +1,11 @@
+# WooCommerce Export - ignored files
+
+# Configuration with secrets
+config.php
+
+# Log files
+*.log
+export.log
+
+# Temporary files
+*.tmp

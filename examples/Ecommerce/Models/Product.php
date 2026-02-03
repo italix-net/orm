@@ -260,6 +260,149 @@ class Product extends ActiveRow
     }
 
     // =========================================
+    // BUNDLE/PACK SUPPORT
+    // =========================================
+
+    /**
+     * Check if this is a product bundle/pack
+     *
+     * A bundle is a collection of products sold together at a bundled price.
+     * Different from a ProductGroup with variants (size/color variations).
+     *
+     * @return bool
+     */
+    public function is_bundle(): bool
+    {
+        return (bool) ($this['is_bundle'] ?? false);
+    }
+
+    /**
+     * Get bundle component items
+     *
+     * Returns array of components with product_id and quantity.
+     *
+     * @return array Array of ['product_id' => id, 'quantity' => qty, ...]
+     */
+    public function bundle_items(): array
+    {
+        $json = $this['bundle_items'] ?? '';
+        if (empty($json)) {
+            return [];
+        }
+
+        $items = json_decode($json, true);
+        return is_array($items) ? $items : [];
+    }
+
+    /**
+     * Set bundle component items
+     *
+     * @param array $items Array of ['product_id' => id, 'quantity' => qty, ...]
+     * @return void
+     */
+    public function set_bundle_items(array $items): void
+    {
+        $this['bundle_items'] = json_encode($items, JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Add a product to this bundle
+     *
+     * @param int $productThingId The Thing ID of the product to add
+     * @param int $quantity Quantity of this product in the bundle
+     * @param array $options Additional options (discount, optional, etc.)
+     * @return void
+     */
+    public function add_bundle_item(int $productThingId, int $quantity = 1, array $options = []): void
+    {
+        $items = $this->bundle_items();
+        $items[] = array_merge([
+            'product_id' => $productThingId,
+            'quantity' => $quantity,
+        ], $options);
+        $this->set_bundle_items($items);
+    }
+
+    /**
+     * Get bundle component products as Things
+     *
+     * @return array<Thing>
+     */
+    public function bundle_products(): array
+    {
+        if (!$this->is_bundle()) {
+            return [];
+        }
+
+        $products = [];
+        foreach ($this->bundle_items() as $item) {
+            $productId = $item['product_id'] ?? null;
+            if ($productId) {
+                $thing = Thing::find_with_delegate($productId);
+                if ($thing) {
+                    $products[] = $thing;
+                }
+            }
+        }
+
+        return $products;
+    }
+
+    /**
+     * Calculate bundle value (sum of component prices)
+     *
+     * @return float
+     */
+    public function bundle_value(): float
+    {
+        if (!$this->is_bundle()) {
+            return 0;
+        }
+
+        $total = 0;
+        foreach ($this->bundle_items() as $item) {
+            $productId = $item['product_id'] ?? null;
+            $quantity = $item['quantity'] ?? 1;
+
+            if ($productId) {
+                $thing = Thing::find_with_delegate($productId);
+                if ($thing) {
+                    $delegate = $thing->delegate();
+                    if ($delegate instanceof self) {
+                        $total += $delegate->price() * $quantity;
+                    }
+                }
+            }
+        }
+
+        return $total;
+    }
+
+    /**
+     * Calculate bundle savings (value minus bundle price)
+     *
+     * @return float
+     */
+    public function bundle_savings(): float
+    {
+        return $this->bundle_value() - $this->price();
+    }
+
+    /**
+     * Get bundle savings as percentage
+     *
+     * @return float
+     */
+    public function bundle_savings_percent(): float
+    {
+        $value = $this->bundle_value();
+        if ($value <= 0) {
+            return 0;
+        }
+        return round(($this->bundle_savings() / $value) * 100, 1);
+    }
+
+    // =========================================
     // VARIANT ATTRIBUTES
     // =========================================
 

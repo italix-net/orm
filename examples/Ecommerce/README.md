@@ -9,6 +9,7 @@ This example demonstrates how to build a flexible, Schema.org-compliant e-commer
 - **DelegatedTypes** for polymorphic relationships (Products, Orders, Customers)
 - **Schema.org** vocabulary for semantic data modeling
 - **PrestaShop integration** for importing real e-commerce data
+- **WooCommerce integration** for exporting products to WordPress
 
 ## Architecture
 
@@ -361,6 +362,120 @@ $typeInfo = $client->getProductTypeInfo($productId);
 // ]
 ```
 
+## WooCommerce Integration (Export)
+
+Export your local products to a WordPress WooCommerce store using the REST API.
+
+### Configuration
+
+Create `WooCommerce/config.php`:
+
+```php
+return [
+    // WooCommerce API
+    'woocommerce_url' => 'https://your-wordpress-site.com',
+    'woocommerce_consumer_key' => 'ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    'woocommerce_consumer_secret' => 'cs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+
+    // Local database
+    'db_type' => 'sqlite',
+    'db_sqlite_path' => __DIR__ . '/../ecommerce.db',
+];
+```
+
+To generate WooCommerce API keys:
+1. Go to **WooCommerce > Settings > Advanced > REST API**
+2. Click **Add key**
+3. Set Description, User, and Permissions (Read/Write)
+4. Click **Generate API key**
+5. Copy the Consumer Key and Consumer Secret
+
+### Running the Export
+
+```bash
+# Export all products
+php examples/Ecommerce/WooCommerce/ExportProducts.php
+
+# Export with options
+php examples/Ecommerce/WooCommerce/ExportProducts.php --dry-run          # Preview without changes
+php examples/Ecommerce/WooCommerce/ExportProducts.php --update           # Update existing products
+php examples/Ecommerce/WooCommerce/ExportProducts.php --sku=PROD-001     # Export specific SKU
+php examples/Ecommerce/WooCommerce/ExportProducts.php --limit=10         # Export first 10 products
+php examples/Ecommerce/WooCommerce/ExportProducts.php --debug            # Enable debug output
+```
+
+### Product Type Mapping
+
+| Local Product Type | WooCommerce Type | Notes |
+|-------------------|------------------|-------|
+| Simple product | `simple` | Physical products |
+| ProductGroup (variants) | `variable` | With variations |
+| Virtual product | `simple` (virtual=true) | Not shipped |
+| Downloadable product | `simple` (downloadable=true) | With download files |
+| Service product | `simple` (virtual=true) | Services |
+
+### Export Features
+
+| Feature | Support |
+|---------|---------|
+| Simple products | Full |
+| Variable products (variants) | Full |
+| Virtual products | Full |
+| Downloadable products | Full (with download URL) |
+| Product categories | Auto-created |
+| Product attributes | Auto-created for variants |
+| Stock management | Full |
+| Product images | URL-based |
+| Update existing products | With `--update` flag |
+| Batch operations | Supported |
+
+### Programmatic Usage
+
+```php
+use Examples\Ecommerce\WooCommerce\WooCommerceClient;
+
+$client = new WooCommerceClient(
+    'https://your-site.com',
+    'ck_xxx',
+    'cs_xxx'
+);
+
+// Create a simple product
+$product = $client->createProduct([
+    'name' => 'My Product',
+    'type' => 'simple',
+    'regular_price' => '29.99',
+    'sku' => 'PROD-001',
+]);
+
+// Create a variable product with variations
+$parent = $client->createProduct([
+    'name' => 'T-Shirt',
+    'type' => 'variable',
+    'attributes' => [
+        ['name' => 'Size', 'options' => ['S', 'M', 'L'], 'variation' => true],
+        ['name' => 'Color', 'options' => ['Red', 'Blue'], 'variation' => true],
+    ],
+]);
+
+$client->createVariation($parent['id'], [
+    'sku' => 'TSHIRT-RED-S',
+    'regular_price' => '25.00',
+    'attributes' => [
+        ['name' => 'Size', 'option' => 'S'],
+        ['name' => 'Color', 'option' => 'Red'],
+    ],
+]);
+
+// Find product by SKU
+$existing = $client->findProductBySku('PROD-001');
+
+// Update product
+$client->updateProduct($existing['id'], [
+    'regular_price' => '34.99',
+]);
+```
+
 ## Running Tests
 
 ```bash
@@ -394,6 +509,11 @@ examples/Ecommerce/
 ├── PrestaShop/
 │   ├── PrestaShopClient.php   # API client
 │   ├── ImportOrders.php       # Order importer
+│   ├── config.example.php     # Configuration template
+│   └── config.php             # Your configuration (gitignored)
+├── WooCommerce/
+│   ├── WooCommerceClient.php  # WooCommerce REST API client
+│   ├── ExportProducts.php     # Product exporter
 │   ├── config.example.php     # Configuration template
 │   └── config.php             # Your configuration (gitignored)
 ├── ecommerce_test.php     # Test suite

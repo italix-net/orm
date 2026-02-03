@@ -410,9 +410,44 @@ php examples/Ecommerce/WooCommerce/ExportProducts.php --debug            # Enabl
 |-------------------|------------------|-------|
 | Simple product | `simple` | Physical products |
 | ProductGroup (variants) | `variable` | With variations |
+| **Product bundle/pack** | `bundle` or `grouped` | See Bundle Support below |
 | Virtual product | `simple` (virtual=true) | Not shipped |
 | Downloadable product | `simple` (downloadable=true) | With download files |
 | Service product | `simple` (virtual=true) | Services |
+
+### Bundle Support
+
+WooCommerce doesn't have native bundle support. The exporter handles bundles in two ways:
+
+**With WooCommerce Product Bundles plugin:**
+- Bundles are exported as `bundle` type products
+- Full bundle pricing and component tracking
+- Components are sold together at a bundled price
+
+**Without bundle plugin (fallback):**
+- Bundles are exported as `grouped` products
+- Components are displayed together but sold separately
+- Each component has its own price
+
+```php
+// Check bundle support
+$strategy = $client->getBundleStrategy();  // 'bundle' or 'grouped'
+
+// Create a bundle (with Product Bundles plugin)
+$bundle = $client->createBundleProduct([
+    'name' => 'Starter Kit',
+    'regular_price' => '99.99',
+    'bundled_items' => [
+        ['product_id' => 123, 'quantity_min' => 1, 'quantity_max' => 1],
+        ['product_id' => 456, 'quantity_min' => 1, 'quantity_max' => 1],
+    ],
+]);
+
+// Create a grouped product (fallback)
+$grouped = $client->createGroupedProduct([
+    'name' => 'Product Collection',
+], [123, 456, 789]);  // Child product IDs
+```
 
 ### Export Features
 
@@ -420,6 +455,7 @@ php examples/Ecommerce/WooCommerce/ExportProducts.php --debug            # Enabl
 |---------|---------|
 | Simple products | Full |
 | Variable products (variants) | Full |
+| **Product bundles** | Full (with plugin) / Grouped (fallback) |
 | Virtual products | Full |
 | Downloadable products | Full (with download URL) |
 | Product categories | Auto-created |

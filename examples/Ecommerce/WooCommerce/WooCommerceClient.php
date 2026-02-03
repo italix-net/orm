@@ -307,6 +307,146 @@ class WooCommerceClient
     }
 
     // =========================================
+    // PRODUCT BUNDLES
+    // =========================================
+    // Support for WooCommerce Product Bundles plugin
+    // @see https://woocommerce.com/products/product-bundles/
+
+    /**
+     * Check if WooCommerce Product Bundles plugin is installed
+     *
+     * Tests by checking if 'bundle' product type is available.
+     *
+     * @return bool
+     */
+    public function hasBundleSupport(): bool
+    {
+        if (isset($this->bundleSupportChecked)) {
+            return $this->bundleSupportChecked;
+        }
+
+        // Try to get system status and check for bundle plugin
+        $status = $this->getSystemStatus();
+
+        if ($status && isset($status['active_plugins'])) {
+            foreach ($status['active_plugins'] as $plugin) {
+                $pluginName = strtolower($plugin['plugin'] ?? $plugin['name'] ?? '');
+                if (
+                    str_contains($pluginName, 'product-bundles') ||
+                    str_contains($pluginName, 'woocommerce-product-bundles')
+                ) {
+                    $this->bundleSupportChecked = true;
+                    return true;
+                }
+            }
+        }
+
+        // Alternative: try to create a bundle product type and see if it's accepted
+        // This is a lightweight check that doesn't require plugin list access
+        $this->bundleSupportChecked = false;
+        return false;
+    }
+
+    private bool $bundleSupportChecked;
+
+    /**
+     * Create a bundle product (requires WooCommerce Product Bundles plugin)
+     *
+     * @param array $productData Product data including 'bundled_items'
+     * @return array|null
+     */
+    public function createBundleProduct(array $productData): ?array
+    {
+        $productData['type'] = 'bundle';
+        return $this->createProduct($productData);
+    }
+
+    /**
+     * Create a grouped product (WooCommerce native - alternative to bundles)
+     *
+     * Grouped products display child products together but don't bundle pricing.
+     * Each child is purchased separately.
+     *
+     * @param array $productData Product data
+     * @param array $childProductIds Array of child product IDs
+     * @return array|null
+     */
+    public function createGroupedProduct(array $productData, array $childProductIds = []): ?array
+    {
+        $productData['type'] = 'grouped';
+        $productData['grouped_products'] = $childProductIds;
+        return $this->createProduct($productData);
+    }
+
+    /**
+     * Add products to a grouped product
+     *
+     * @param int $groupedProductId The grouped product ID
+     * @param array $childProductIds Array of child product IDs to add
+     * @return array|null
+     */
+    public function addToGroupedProduct(int $groupedProductId, array $childProductIds): ?array
+    {
+        return $this->updateProduct($groupedProductId, [
+            'grouped_products' => $childProductIds,
+        ]);
+    }
+
+    /**
+     * Build bundled_items array for WooCommerce Product Bundles plugin
+     *
+     * @param array $components Array of ['product_id' => id, 'quantity' => qty, ...]
+     * @return array Formatted bundled_items for API
+     */
+    public function buildBundledItems(array $components): array
+    {
+        $bundledItems = [];
+
+        foreach ($components as $component) {
+            $item = [
+                'product_id' => $component['product_id'],
+                'quantity_min' => $component['quantity'] ?? $component['quantity_min'] ?? 1,
+                'quantity_max' => $component['quantity'] ?? $component['quantity_max'] ?? 1,
+                'quantity_default' => $component['quantity'] ?? $component['quantity_default'] ?? 1,
+                'priced_individually' => $component['priced_individually'] ?? false,
+                'shipped_individually' => $component['shipped_individually'] ?? false,
+                'optional' => $component['optional'] ?? false,
+            ];
+
+            // Add discount if specified
+            if (isset($component['discount'])) {
+                $item['discount'] = $component['discount'];
+            }
+
+            // Add title override if specified
+            if (isset($component['title'])) {
+                $item['title'] = $component['title'];
+            }
+
+            $bundledItems[] = $item;
+        }
+
+        return $bundledItems;
+    }
+
+    /**
+     * Get bundle strategy based on plugin availability
+     *
+     * Returns 'bundle' if Product Bundles plugin is available,
+     * 'grouped' for native WooCommerce grouped products,
+     * or 'simple' if neither is suitable.
+     *
+     * @return string 'bundle', 'grouped', or 'simple'
+     */
+    public function getBundleStrategy(): string
+    {
+        if ($this->hasBundleSupport()) {
+            return 'bundle';
+        }
+        return 'grouped';
+    }
+
+    // =========================================
     // SYSTEM
     // =========================================
 

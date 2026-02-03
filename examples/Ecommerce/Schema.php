@@ -114,6 +114,10 @@ class Schema
             'variant_of_id' => bigint(),                    // FK to parent ProductGroup's thing_id
             'varies_by'   => varchar(200),                  // What varies: 'color,size', etc.
 
+            // Bundle/Pack support (collection of products sold together)
+            'is_bundle'   => boolean()->default(false),     // True if this is a product bundle/pack
+            'bundle_items' => text(),                       // JSON: [{"product_id": 123, "quantity": 2}, ...]
+
             // ===================================================
             // VARIANT ATTRIBUTES (Schema.org properties)
             // ===================================================

@@ -741,6 +741,7 @@ class ImportOrders
             'availability' => ((int)($psProduct['quantity'] ?? 0)) > 0 ? 'InStock' : 'OutOfStock',
             'inventory_level' => (int) ($psProduct['quantity'] ?? 0),
             'is_group' => $isPack, // Mark bundles as ProductGroup
+            'is_bundle' => $isPack, // Also mark as bundle for export
 
             // Virtual product fields
             'is_virtual' => $typeInfo['is_virtual'],
@@ -756,6 +757,22 @@ class ImportOrders
             // Note: download_url is typically generated per-order, not stored on product
         }
 
+        // Add bundle items for pack products
+        if ($isPack) {
+            $packItems = $this->client->getPackItems($psProductId);
+            $bundleItems = [];
+            foreach ($packItems as $packItem) {
+                $bundleItems[] = [
+                    'product_id' => (int) ($packItem['id'] ?? $packItem['id_product'] ?? 0),
+                    'quantity' => (int) ($packItem['quantity'] ?? 1),
+                    'prestashop_id' => (int) ($packItem['id'] ?? $packItem['id_product'] ?? 0),
+                ];
+            }
+            if (!empty($bundleItems)) {
+                $productData['bundle_items'] = json_encode($bundleItems, JSON_UNESCAPED_UNICODE);
+            }
+        }
+
         // Create the product
         $product = Thing::create_product([
             'name' => $name,
@@ -768,7 +785,12 @@ class ImportOrders
 
         // Log with product type
         $typeLabel = $typeInfo['type'];
-        $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$typeLabel}]");
+        if ($isPack) {
+            $bundleCount = count($bundleItems ?? []);
+            $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$typeLabel}] ({$bundleCount} items)");
+        } else {
+            $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$typeLabel}]");
+        }
 
         return $product;
     }

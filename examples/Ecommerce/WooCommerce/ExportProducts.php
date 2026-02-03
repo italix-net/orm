@@ -64,11 +64,18 @@ class ExportProducts
     private int $productsUpdated = 0;
     private int $productsSkipped = 0;
     private int $variationsCreated = 0;
+    private int $bundlesExported = 0;
     private int $errors = 0;
+
+    // Bundle export strategy: 'bundle' (plugin), 'grouped' (native), or 'simple'
+    private string $bundleStrategy = 'grouped';
 
     // Cache for WooCommerce data
     private array $attributeCache = [];
     private array $categoryCache = [];
+
+    // Cache for exported products (needed for bundle component references)
+    private array $exportedProductsCache = [];
 
     public function __construct(array $config)
     {
@@ -145,6 +152,7 @@ class ExportProducts
         // Pre-load WooCommerce attributes and categories
         if (!$this->dryRun) {
             $this->loadWooCommerceData();
+            $this->detectBundleSupport();
         }
 
         // Get products to export
@@ -176,6 +184,23 @@ class ExportProducts
             $this->categoryCache[$cat['slug']] = $cat;
         }
         $this->log("  Loaded " . count($categories) . " categories\n");
+    }
+
+    /**
+     * Detect WooCommerce bundle plugin support
+     */
+    private function detectBundleSupport(): void
+    {
+        $this->log("Checking bundle support...");
+        $this->bundleStrategy = $this->client->getBundleStrategy();
+
+        if ($this->bundleStrategy === 'bundle') {
+            $this->log("  WooCommerce Product Bundles plugin detected!");
+            $this->log("  Bundles will be exported as 'bundle' type products.\n");
+        } else {
+            $this->log("  No bundle plugin detected.");
+            $this->log("  Bundles will be exported as 'grouped' products (components sold separately).\n");
+        }
     }
 
     /**
@@ -238,7 +263,9 @@ class ExportProducts
         }
 
         // Determine product type and build data
-        if ($delegate->is_group()) {
+        if ($delegate->is_bundle()) {
+            $this->exportBundleProduct($thing);
+        } elseif ($delegate->is_group()) {
             $this->exportVariableProduct($thing);
         } else {
             $this->exportSimpleProduct($thing);
@@ -300,8 +327,228 @@ class ExportProducts
         if ($result) {
             $this->log("  Created product ID: {$result['id']}");
             $this->productsExported++;
+
+            // Cache the exported product for bundle references
+            $sku = $delegate['sku'] ?? '';
+            if ($sku) {
+                $this->exportedProductsCache[$sku] = $result['id'];
+            }
         } else {
             $this->error("  Failed to create product");
+            $this->errors++;
+        }
+    }
+
+    /**
+     * Export a bundle/pack product
+     *
+     * Uses WooCommerce Product Bundles plugin if available,
+     * otherwise falls back to grouped products.
+     *
+     * @param Thing $thing
+     */
+    private function exportBundleProduct(Thing $thing): void
+    {
+        $delegate = $thing->delegate();
+        $bundleItems = $delegate->bundle_items();
+        $data = $this->buildProductData($thing);
+
+        $this->log("  Bundle with " . count($bundleItems) . " components");
+
+        // First, ensure all bundle component products are exported
+        $componentWcIds = $this->exportBundleComponents($bundleItems);
+
+        if ($this->bundleStrategy === 'bundle') {
+            // Use WooCommerce Product Bundles plugin
+            $this->exportBundleWithPlugin($thing, $data, $bundleItems, $componentWcIds);
+        } else {
+            // Use native grouped products
+            $this->exportBundleAsGrouped($thing, $data, $componentWcIds);
+        }
+    }
+
+    /**
+     * Export bundle component products first
+     *
+     * @param array $bundleItems Bundle item definitions
+     * @return array Map of local product ID to WooCommerce product ID
+     */
+    private function exportBundleComponents(array $bundleItems): array
+    {
+        $wcIds = [];
+
+        foreach ($bundleItems as $item) {
+            $productId = $item['product_id'] ?? $item['prestashop_id'] ?? null;
+            if (!$productId) {
+                continue;
+            }
+
+            // Find the local product
+            $componentThing = Thing::find_with_delegate($productId);
+            if (!$componentThing) {
+                $this->log("    Warning: Bundle component product ID {$productId} not found locally");
+                continue;
+            }
+
+            $componentDelegate = $componentThing->delegate();
+            $componentSku = $componentDelegate['sku'] ?? '';
+
+            // Check if already exported in this session
+            if (isset($this->exportedProductsCache[$componentSku])) {
+                $wcIds[$productId] = $this->exportedProductsCache[$componentSku];
+                continue;
+            }
+
+            // Check if exists in WooCommerce
+            if (!$this->dryRun && $componentSku) {
+                $existing = $this->client->findProductBySku($componentSku);
+                if ($existing) {
+                    $wcIds[$productId] = $existing['id'];
+                    $this->exportedProductsCache[$componentSku] = $existing['id'];
+                    $this->log("    Component exists: {$componentThing['name']} (WC ID: {$existing['id']})");
+                    continue;
+                }
+            }
+
+            // Export the component product
+            $this->log("    Exporting component: {$componentThing['name']}");
+            if ($componentDelegate->is_variant()) {
+                // Skip variants - they should be exported with their parent
+                $this->log("      Skipping variant (export parent instead)");
+                continue;
+            }
+
+            // Export based on type
+            if ($componentDelegate->is_bundle()) {
+                $this->exportBundleProduct($componentThing);
+            } elseif ($componentDelegate->is_group()) {
+                $this->exportVariableProduct($componentThing);
+            } else {
+                $this->exportSimpleProduct($componentThing);
+            }
+
+            // Get the WC ID from cache
+            if (isset($this->exportedProductsCache[$componentSku])) {
+                $wcIds[$productId] = $this->exportedProductsCache[$componentSku];
+            }
+        }
+
+        return $wcIds;
+    }
+
+    /**
+     * Export bundle using WooCommerce Product Bundles plugin
+     *
+     * @param Thing $thing
+     * @param array $data Base product data
+     * @param array $bundleItems Local bundle items
+     * @param array $componentWcIds Map of local ID to WC ID
+     */
+    private function exportBundleWithPlugin(Thing $thing, array $data, array $bundleItems, array $componentWcIds): void
+    {
+        $delegate = $thing->delegate();
+
+        $data['type'] = 'bundle';
+
+        // Build bundled_items for the plugin
+        $bundledItems = [];
+        foreach ($bundleItems as $item) {
+            $localId = $item['product_id'] ?? $item['prestashop_id'] ?? null;
+            $wcId = $componentWcIds[$localId] ?? null;
+
+            if (!$wcId) {
+                $this->log("    Warning: Skipping component - no WC ID for local ID {$localId}");
+                continue;
+            }
+
+            $bundledItems[] = [
+                'product_id' => $wcId,
+                'quantity_min' => $item['quantity'] ?? 1,
+                'quantity_max' => $item['quantity'] ?? 1,
+                'quantity_default' => $item['quantity'] ?? 1,
+                'priced_individually' => false,
+                'shipped_individually' => false,
+                'optional' => false,
+            ];
+        }
+
+        $data['bundled_items'] = $bundledItems;
+
+        if ($this->dryRun) {
+            $this->log("  [DRY RUN] Would create bundle product with " . count($bundledItems) . " items");
+            $this->bundlesExported++;
+            return;
+        }
+
+        $result = $this->client->createBundleProduct($data);
+
+        if ($result) {
+            $this->log("  Created bundle product ID: {$result['id']}");
+            $this->bundlesExported++;
+
+            $sku = $delegate['sku'] ?? '';
+            if ($sku) {
+                $this->exportedProductsCache[$sku] = $result['id'];
+            }
+        } else {
+            $this->error("  Failed to create bundle product");
+            $this->errors++;
+        }
+    }
+
+    /**
+     * Export bundle as a grouped product (fallback when no bundle plugin)
+     *
+     * @param Thing $thing
+     * @param array $data Base product data
+     * @param array $componentWcIds Map of local ID to WC ID
+     */
+    private function exportBundleAsGrouped(Thing $thing, array $data, array $componentWcIds): void
+    {
+        $delegate = $thing->delegate();
+
+        // Note: Grouped products don't have their own price - each component is sold separately
+        // We'll set the price to 0 and add a note in the description
+        $bundlePrice = $delegate->price();
+        $bundleValue = $delegate->bundle_value();
+        $savings = $delegate->bundle_savings();
+
+        // Update description to explain the grouped product
+        $groupedNote = "\n\n<strong>This is a product bundle.</strong> Purchase all items together.";
+        if ($savings > 0) {
+            $groupedNote .= sprintf(" Bundle value: %s (Save %s!)",
+                $delegate->formatted_price(),
+                number_format($savings, 2)
+            );
+        }
+        $data['description'] = ($data['description'] ?? '') . $groupedNote;
+
+        // For grouped products, we don't set a price (components have their own prices)
+        unset($data['regular_price']);
+
+        $data['type'] = 'grouped';
+        $data['grouped_products'] = array_values($componentWcIds);
+
+        if ($this->dryRun) {
+            $this->log("  [DRY RUN] Would create grouped product with " . count($componentWcIds) . " children");
+            $this->log("  Note: Grouped products - components sold separately (no bundle pricing)");
+            $this->bundlesExported++;
+            return;
+        }
+
+        $result = $this->client->createGroupedProduct($data, array_values($componentWcIds));
+
+        if ($result) {
+            $this->log("  Created grouped product ID: {$result['id']}");
+            $this->log("  Note: Using grouped product (install WooCommerce Product Bundles for true bundle support)");
+            $this->bundlesExported++;
+
+            $sku = $delegate['sku'] ?? '';
+            if ($sku) {
+                $this->exportedProductsCache[$sku] = $result['id'];
+            }
+        } else {
+            $this->error("  Failed to create grouped product");
             $this->errors++;
         }
     }
@@ -367,6 +614,12 @@ class ExportProducts
         $parentId = $result['id'];
         $this->log("  Created variable product ID: {$parentId}");
         $this->productsExported++;
+
+        // Cache the exported product for bundle references
+        $sku = $delegate['sku'] ?? '';
+        if ($sku) {
+            $this->exportedProductsCache[$sku] = $parentId;
+        }
 
         // Create variations
         foreach ($variants as $variant) {
@@ -713,11 +966,19 @@ class ExportProducts
         $this->log("\n" . str_repeat('=', 50));
         $this->log("EXPORT SUMMARY");
         $this->log(str_repeat('=', 50));
-        $this->log("Products created:  {$this->productsExported}");
-        $this->log("Products updated:  {$this->productsUpdated}");
-        $this->log("Products skipped:  {$this->productsSkipped}");
+        $this->log("Products created:   {$this->productsExported}");
+        $this->log("Products updated:   {$this->productsUpdated}");
+        $this->log("Products skipped:   {$this->productsSkipped}");
         $this->log("Variations created: {$this->variationsCreated}");
-        $this->log("Errors:            {$this->errors}");
+        $this->log("Bundles exported:   {$this->bundlesExported}");
+        $this->log("Errors:             {$this->errors}");
+
+        if ($this->bundlesExported > 0) {
+            $this->log("\nBundle strategy: {$this->bundleStrategy}");
+            if ($this->bundleStrategy === 'grouped') {
+                $this->log("  Note: Install WooCommerce Product Bundles plugin for true bundle support.");
+            }
+        }
 
         if ($this->dryRun) {
             $this->log("\n(DRY RUN - no actual changes were made)");

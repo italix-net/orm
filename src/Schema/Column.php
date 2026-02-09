@@ -1,7 +1,7 @@
 <?php
 /**
  * Italix ORM - Column Class
- * 
+ *
  * @package Italix\Orm
  * @license Apache-2.0
  */
@@ -10,10 +10,16 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Schema;
 
+use Italix\Orm\Contracts\RelationalColumnMeta;
+use Italix\Orm\Contracts\RelationMeta;
+
 /**
  * Represents a database column with its type and constraints.
+ *
+ * Implements RelationalColumnMeta (which extends ColumnMeta) for
+ * compatibility with italix/forms library.
  */
-class Column
+class Column implements RelationalColumnMeta
 {
     /** @var string Column name in code */
     protected string $name;
@@ -56,6 +62,12 @@ class Column
     
     /** @var array Column references for foreign keys */
     protected array $references = [];
+
+    /** @var RelationMeta|null Relation metadata for forms integration */
+    protected ?RelationMeta $relation_meta = null;
+
+    /** @var string Default label column for FK relations */
+    protected string $foreign_label = 'name';
 
     /**
      * Create a new Column instance
@@ -281,6 +293,83 @@ class Column
     public function get_references(): array
     {
         return $this->references;
+    }
+
+    // =========================================
+    // RelationalColumnMeta Interface (Forms Integration)
+    // =========================================
+
+    /**
+     * Get foreign key relation metadata, if this column is a foreign key.
+     *
+     * Implements RelationalColumnMeta interface for italix/forms compatibility.
+     * Returns null if this column is not a foreign key.
+     *
+     * @return RelationMeta|null
+     */
+    public function get_relation(): ?RelationMeta
+    {
+        // Return cached relation meta if already set
+        if ($this->relation_meta !== null) {
+            return $this->relation_meta;
+        }
+
+        // Auto-create from references if available
+        if (!empty($this->references)) {
+            $this->relation_meta = new RelationMetaAdapter(
+                $this->references['table'],
+                $this->references['column'],
+                $this->foreign_label
+            );
+            return $this->relation_meta;
+        }
+
+        return null;
+    }
+
+    /**
+     * Set custom relation metadata.
+     *
+     * Use this to provide a custom RelationMeta implementation
+     * or to configure the relation with a database connection.
+     *
+     * @param RelationMeta $relation
+     * @return self
+     */
+    public function set_relation(RelationMeta $relation): self
+    {
+        $this->relation_meta = $relation;
+        return $this;
+    }
+
+    /**
+     * Set the label column to use for FK relation display.
+     *
+     * This is used when auto-creating RelationMetaAdapter from references.
+     *
+     * @param string $label Column name to use as label (default: 'name')
+     * @return self
+     */
+    public function label_column(string $label): self
+    {
+        $this->foreign_label = $label;
+
+        // Update existing relation_meta if it's a RelationMetaAdapter
+        if ($this->relation_meta instanceof RelationMetaAdapter) {
+            $this->relation_meta->set_foreign_label($label);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Check if this column has a foreign key relation.
+     *
+     * @return bool
+     */
+    public function has_relation(): bool
+    {
+        return $this->get_relation() !== null;
     }
 
     /**

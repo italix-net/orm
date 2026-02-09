@@ -1,7 +1,7 @@
 <?php
 /**
  * Italix ORM - Table Class
- * 
+ *
  * @package Italix\Orm
  * @license Apache-2.0
  */
@@ -10,10 +10,15 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Schema;
 
+use Italix\Orm\Contracts\TableMeta;
+use Italix\Orm\Contracts\ColumnMeta;
+
 /**
  * Represents a database table with its columns and constraints.
+ *
+ * Implements TableMeta for compatibility with italix/forms library.
  */
-class Table
+class Table implements TableMeta
 {
     /** @var string Table name */
     protected string $name;
@@ -122,6 +127,35 @@ class Table
      * Get a specific column
      */
     public function get_column(string $name): ?Column
+    {
+        return $this->columns[$name] ?? null;
+    }
+
+    // =========================================
+    // TableMeta Interface (Forms Integration)
+    // =========================================
+
+    /**
+     * Return an iterable of column descriptors.
+     *
+     * Implements TableMeta interface for italix/forms compatibility.
+     *
+     * @return iterable<string, ColumnMeta>
+     */
+    public function describe_columns(): iterable
+    {
+        return $this->columns;
+    }
+
+    /**
+     * Get a specific column descriptor by name.
+     *
+     * Implements TableMeta interface for italix/forms compatibility.
+     *
+     * @param string $name Column name
+     * @return ColumnMeta|null
+     */
+    public function describe_column(string $name): ?ColumnMeta
     {
         return $this->columns[$name] ?? null;
     }

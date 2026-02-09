@@ -15,7 +15,10 @@
         "pdo",
         "relations",
         "eager-loading",
-        "drizzle"
+        "drizzle",
+        "forms",
+        "form-integration",
+        "delegated-types"
     ],
     "bin": [
         "bin/ix"
@@ -38,7 +41,8 @@
     "suggest": {
         "ext-pdo_mysql": "Required for MySQL support",
         "ext-pdo_pgsql": "Required for PostgreSQL/Supabase support",
-        "ext-pdo_sqlite": "Required for SQLite support"
+        "ext-pdo_sqlite": "Required for SQLite support",
+        "italix/forms": "Form metadata, validation, and HTML rendering library - works seamlessly with italix/orm"
     },
     "autoload": {
         "psr-4": {
@@ -47,6 +51,7 @@
         "files": [
             "src/functions.php",
             "src/Schema/ColumnTypes.php",
+            "src/Schema/PolymorphicColumn.php",
             "src/Operators/Operators.php",
             "src/Relations/functions.php",
             "src/ActiveRow/functions.php"

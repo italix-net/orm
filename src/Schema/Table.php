@@ -1,7 +1,7 @@
 <?php
 /**
  * Italix ORM - Table Class
- * 
+ *
  * @package Italix\Orm
  * @license Apache-2.0
  */
@@ -10,34 +10,83 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Schema;
 
+use Italix\Contracts\TableMeta;
+use Italix\Contracts\ColumnMeta;
+use Italix\Contracts\DelegatedTableMeta;
+
 /**
  * Represents a database table with its columns and constraints.
+ *
+ * Implements DelegatedTableMeta (which extends TableMeta) for full
+ * compatibility with italix/forms library, including delegated types support.
+ *
+ * @example Basic table
+ * $users = mysql_table('users', [
+ *     'id'    => serial(),
+ *     'name'  => varchar(255)->not_null(),
+ *     'email' => varchar(255)->unique(),
+ * ]);
+ *
+ * @example Table with delegated types
+ * $things = mysql_table('things', [
+ *     'id'        => serial(),
+ *     'type'      => varchar(50)->not_null(),
+ *     'type_path' => varchar(255),
+ *     'name'      => varchar(255)->not_null(),
+ * ])
+ * ->type_column('type')
+ * ->type_path_column('type_path')
+ * ->delegate_foreign_key('thing_id')
+ * ->delegates([
+ *     'Book'  => $books_table,
+ *     'Movie' => $movies_table,
+ * ]);
+ *
+ * // Use directly with italix/forms
+ * $form = new FormMeta($things);
+ * $form->delegate('Book');
  */
-class Table
+class Table implements DelegatedTableMeta
 {
     /** @var string Table name */
     protected string $name;
-    
+
     /** @var string Database dialect */
     protected string $dialect;
-    
+
     /** @var array<string, Column> Columns */
     protected array $columns = [];
-    
+
     /** @var string|null Schema name */
     protected ?string $schema = null;
-    
+
     /** @var array Primary key columns */
     protected array $primary_keys = [];
-    
+
     /** @var array Unique constraints */
     protected array $unique_constraints = [];
-    
+
     /** @var array Index definitions */
     protected array $indexes = [];
-    
+
     /** @var array Foreign key constraints */
     protected array $foreign_keys = [];
+
+    // =========================================
+    // Delegated Types Configuration
+    // =========================================
+
+    /** @var string|null Type discriminator column */
+    protected ?string $dt_type_column = null;
+
+    /** @var string|null Type path column */
+    protected ?string $dt_type_path_column = null;
+
+    /** @var string Delegate foreign key column */
+    protected string $dt_foreign_key = 'thing_id';
+
+    /** @var array<string, TableMeta> Delegate tables */
+    protected array $dt_delegates = [];
 
     /**
      * Create a new Table instance
@@ -126,14 +175,162 @@ class Table
         return $this->columns[$name] ?? null;
     }
 
+    // =========================================
+    // TableMeta Interface (Forms Integration)
+    // =========================================
+
+    /**
+     * Return an iterable of column descriptors.
+     *
+     * Implements TableMeta interface for italix/forms compatibility.
+     *
+     * @return iterable<string, ColumnMeta>
+     */
+    public function describe_columns(): iterable
+    {
+        return $this->columns;
+    }
+
+    /**
+     * Get a specific column descriptor by name.
+     *
+     * Implements TableMeta interface for italix/forms compatibility.
+     *
+     * @param string $name Column name
+     * @return ColumnMeta|null
+     */
+    public function describe_column(string $name): ?ColumnMeta
+    {
+        return $this->columns[$name] ?? null;
+    }
+
     /**
      * Get primary key columns
-     * 
+     *
      * @return array<string>
      */
     public function get_primary_keys(): array
     {
         return $this->primary_keys;
+    }
+
+    // =========================================
+    // DelegatedTableMeta Interface
+    // =========================================
+
+    /**
+     * Get the type discriminator column name.
+     *
+     * @return string|null
+     */
+    public function get_type_column(): ?string
+    {
+        return $this->dt_type_column;
+    }
+
+    /**
+     * Get the type path column name.
+     *
+     * @return string|null
+     */
+    public function get_type_path_column(): ?string
+    {
+        return $this->dt_type_path_column;
+    }
+
+    /**
+     * Get the foreign key column name used in delegate tables.
+     *
+     * @return string
+     */
+    public function get_delegate_foreign_key(): string
+    {
+        return $this->dt_foreign_key;
+    }
+
+    /**
+     * Get the direct delegate sub-tables.
+     *
+     * @return array<string, TableMeta>
+     */
+    public function get_delegate_tables(): array
+    {
+        return $this->dt_delegates;
+    }
+
+    // =========================================
+    // Delegation Configuration (Fluent API)
+    // =========================================
+
+    /**
+     * Set the type discriminator column name.
+     *
+     * @param string $column Column name (e.g., 'type')
+     * @return self
+     */
+    public function type_column(string $column): self
+    {
+        $this->dt_type_column = $column;
+        return $this;
+    }
+
+    /**
+     * Set the type path column name.
+     *
+     * @param string|null $column Column name (e.g., 'type_path'), or null to disable
+     * @return self
+     */
+    public function type_path_column(?string $column): self
+    {
+        $this->dt_type_path_column = $column;
+        return $this;
+    }
+
+    /**
+     * Set the foreign key column name used in delegate tables.
+     *
+     * @param string $column Column name (e.g., 'thing_id')
+     * @return self
+     */
+    public function delegate_foreign_key(string $column): self
+    {
+        $this->dt_foreign_key = $column;
+        return $this;
+    }
+
+    /**
+     * Set delegate tables.
+     *
+     * @param array<string, TableMeta> $delegates Map of type name => table
+     * @return self
+     */
+    public function delegates(array $delegates): self
+    {
+        $this->dt_delegates = $delegates;
+        return $this;
+    }
+
+    /**
+     * Add a single delegate table.
+     *
+     * @param string $type_name Type identifier (e.g., 'Book')
+     * @param TableMeta $table The delegate table
+     * @return self
+     */
+    public function add_delegate(string $type_name, TableMeta $table): self
+    {
+        $this->dt_delegates[$type_name] = $table;
+        return $this;
+    }
+
+    /**
+     * Check if this table has delegation configured.
+     *
+     * @return bool
+     */
+    public function has_delegates(): bool
+    {
+        return !empty($this->dt_delegates);
     }
 
     /**

@@ -10,9 +10,9 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Schema;
 
-use Italix\Orm\Contracts\DelegatedTableMeta;
-use Italix\Orm\Contracts\ColumnMeta;
-use Italix\Orm\Contracts\TableMeta;
+use Italix\Contracts\DelegatedTableMeta;
+use Italix\Contracts\ColumnMeta;
+use Italix\Contracts\TableMeta;
 use Italix\Orm\ActiveRow\ActiveRow;
 
 /**

@@ -10,8 +10,8 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Schema;
 
-use Italix\Orm\Contracts\RelationalColumnMeta;
-use Italix\Orm\Contracts\RelationMeta;
+use Italix\Contracts\RelationalColumnMeta;
+use Italix\Contracts\RelationMeta;
 
 /**
  * Represents a database column with its type and constraints.

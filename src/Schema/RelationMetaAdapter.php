@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Schema;
 
-use Italix\Orm\Contracts\RelationMeta;
+use Italix\Contracts\RelationMeta;
 use Italix\Orm\IxOrm;
 
 /**

@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Concerns;
 
-use Italix\Orm\Contracts\ColumnMeta;
+use Italix\Contracts\ColumnMeta;
 use Italix\Orm\IxOrm;
 
 /**

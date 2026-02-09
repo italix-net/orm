@@ -10,8 +10,8 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Schema;
 
-use Italix\Orm\Contracts\PolymorphicColumnMeta;
-use Italix\Orm\Contracts\TableMeta;
+use Italix\Contracts\PolymorphicColumnMeta;
+use Italix\Contracts\TableMeta;
 
 /**
  * Represents a polymorphic relationship column.

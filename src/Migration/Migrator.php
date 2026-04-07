@@ -12,26 +12,26 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Migration;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 /**
  * Manages database migrations: run, rollback, status, and tracking.
  */
 class Migrator
 {
-    protected IxOrm $db;
+    protected DataManager $dm;
     protected string $migrations_path;
     protected string $migrations_table = 'ix_migrations';
     protected string $dialect;
     protected bool $output_enabled = true;
 
-    public function __construct(IxOrm $db, string $migrations_path)
+    public function __construct(DataManager $dm, string $migrations_path)
     {
-        $this->db = $db;
+        $this->dm = $dm;
         $this->migrations_path = rtrim($migrations_path, '/');
-        $this->dialect = $db->get_driver()->get_dialect_name();
+        $this->dialect = $dm->get_driver()->get_dialect_name();
         
-        Schema::set_connection($db);
+        Schema::set_connection($dm);
         $this->ensure_migrations_table();
     }
 
@@ -179,7 +179,7 @@ class Migrator
     public function get_applied_migrations(): array
     {
         $table = $this->quote_identifier($this->migrations_table);
-        return $this->db->query("SELECT * FROM {$table} ORDER BY batch ASC, migration ASC");
+        return $this->dm->query("SELECT * FROM {$table} ORDER BY batch ASC, migration ASC");
     }
 
     /**
@@ -227,14 +227,14 @@ class Migrator
 
         /** @var Migration $migration */
         $migration = new $class_name();
-        $migration->set_connection($this->db);
+        $migration->set_connection($this->dm);
         $migration->set_name($name);
 
         $use_transaction = $migration->is_transactional() && $this->dialect !== 'mysql';
 
         try {
             if ($use_transaction) {
-                $this->db->begin_transaction();
+                $this->dm->begin_transaction();
             }
 
             if ($direction === 'up') {
@@ -245,11 +245,11 @@ class Migrator
             }
 
             if ($use_transaction) {
-                $this->db->commit();
+                $this->dm->commit();
             }
         } catch (\Throwable $e) {
             if ($use_transaction) {
-                $this->db->rollback();
+                $this->dm->rollback();
             }
             throw $e;
         }
@@ -287,11 +287,11 @@ class Migrator
         
         if ($steps === 0) {
             // Rollback all
-            return $this->db->query("SELECT * FROM {$table} ORDER BY batch DESC, migration DESC");
+            return $this->dm->query("SELECT * FROM {$table} ORDER BY batch DESC, migration DESC");
         }
 
         // Get the last N batches
-        $batches = $this->db->query(
+        $batches = $this->dm->query(
             "SELECT DISTINCT batch FROM {$table} ORDER BY batch DESC LIMIT {$steps}"
         );
         
@@ -302,7 +302,7 @@ class Migrator
         $batch_numbers = array_column($batches, 'batch');
         $placeholders = implode(',', array_fill(0, count($batch_numbers), '?'));
         
-        return $this->db->query(
+        return $this->dm->query(
             "SELECT * FROM {$table} WHERE batch IN ({$placeholders}) ORDER BY batch DESC, migration DESC",
             $batch_numbers
         );
@@ -314,7 +314,7 @@ class Migrator
     protected function record_migration(string $name, int $batch): void
     {
         $table = $this->quote_identifier($this->migrations_table);
-        $this->db->execute(
+        $this->dm->execute(
             "INSERT INTO {$table} (migration, batch) VALUES (?, ?)",
             [$name, $batch]
         );
@@ -326,7 +326,7 @@ class Migrator
     protected function remove_migration_record(string $name): void
     {
         $table = $this->quote_identifier($this->migrations_table);
-        $this->db->execute("DELETE FROM {$table} WHERE migration = ?", [$name]);
+        $this->dm->execute("DELETE FROM {$table} WHERE migration = ?", [$name]);
     }
 
     /**
@@ -335,7 +335,7 @@ class Migrator
     protected function get_next_batch_number(): int
     {
         $table = $this->quote_identifier($this->migrations_table);
-        $result = $this->db->query("SELECT MAX(batch) as max_batch FROM {$table}");
+        $result = $this->dm->query("SELECT MAX(batch) as max_batch FROM {$table}");
         return ($result[0]['max_batch'] ?? 0) + 1;
     }
 
@@ -369,7 +369,7 @@ class Migrator
             )",
         };
 
-        $this->db->execute($sql);
+        $this->dm->execute($sql);
     }
 
     /**

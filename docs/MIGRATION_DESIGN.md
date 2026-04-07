@@ -104,7 +104,7 @@ namespace Italix\Orm\Migration;
 
 abstract class Migration
 {
-    protected IxOrm $db;
+    protected DataManager $dm;
     
     abstract public function up(): void;
     abstract public function down(): void;
@@ -233,7 +233,7 @@ namespace Italix\Orm\Migration;
 
 class Schema
 {
-    protected static IxOrm $db;
+    protected static DataManager $dm;
     
     public static function create(string $table, callable $callback): void;
     public static function table(string $table, callable $callback): void;
@@ -253,7 +253,7 @@ namespace Italix\Orm\Migration;
 
 class Migrator
 {
-    protected IxOrm $db;
+    protected DataManager $dm;
     protected string $migrations_path;
     protected string $migrations_table = 'ix_migrations';
     
@@ -345,14 +345,14 @@ php italix make:migration add_email_to_users --table=users
 use Italix\Orm\Migration\Migrator;
 use function Italix\Orm\mysql;
 
-$db = mysql([
+$dm = mysql([
     'host' => 'localhost',
     'database' => 'myapp',
     'username' => 'root',
     'password' => 'secret',
 ]);
 
-$migrator = new Migrator($db, __DIR__ . '/migrations');
+$migrator = new Migrator($dm, __DIR__ . '/migrations');
 
 // Run migrations
 $applied = $migrator->migrate();

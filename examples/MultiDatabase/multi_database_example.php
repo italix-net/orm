@@ -328,7 +328,7 @@ echo "Dialect: $dialect\n\n";
 try {
     // Create connection
     echo "1. Creating database connection...\n";
-    $db = create_connection($dialect);
+    $dm = create_connection($dialect);
     echo "   ✓ Connected to $dialect\n\n";
 
     // Create schema
@@ -342,13 +342,13 @@ try {
         $schema->get_table('posts'),
         $schema->get_table('products'),
     ];
-    $db->create_tables(...$tables_to_create);
+    $dm->create_tables(...$tables_to_create);
     echo "   ✓ Tables created\n\n";
 
     // Setup persistence
-    UserRow::set_persistence($db, $schema->get_table('users'));
-    PostRow::set_persistence($db, $schema->get_table('posts'));
-    ProductRow::set_persistence($db, $schema->get_table('products'));
+    UserRow::set_persistence($dm, $schema->get_table('users'));
+    PostRow::set_persistence($dm, $schema->get_table('posts'));
+    ProductRow::set_persistence($dm, $schema->get_table('products'));
 
     // ============================================
     // Create sample data
@@ -489,7 +489,7 @@ try {
     // ============================================
 
     echo "\n8. Cleanup...\n";
-    $db->drop_tables(...array_reverse($tables_to_create));
+    $dm->drop_tables(...array_reverse($tables_to_create));
     echo "   ✓ Tables dropped\n";
 
     echo "\n=== Example completed successfully on $dialect ===\n";

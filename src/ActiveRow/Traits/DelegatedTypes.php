@@ -408,9 +408,9 @@ trait DelegatedTypes
         }
 
         $delegate_class = $types[$type];
-        $db = static::get_db();
+        $dm = static::get_dm();
 
-        return $db->transaction(function ($db) use ($type, $base_data, $delegate_data, $delegate_class, $instance) {
+        return $dm->transaction(function ($dm) use ($type, $base_data, $delegate_data, $delegate_class, $instance) {
             // Set the type column
             $type_column = $instance->get_type_column();
             $base_data[$type_column] = $type;
@@ -442,9 +442,9 @@ trait DelegatedTypes
         array $base_data,
         array $delegate_data = []
     ): static {
-        $db = static::get_db();
+        $dm = static::get_dm();
 
-        return $db->transaction(function ($db) use ($base_data, $delegate_data) {
+        return $dm->transaction(function ($dm) use ($base_data, $delegate_data) {
             // Update base thing
             if (!empty($base_data)) {
                 $this->update($base_data);
@@ -467,9 +467,9 @@ trait DelegatedTypes
      */
     public function delete_with_delegate(): static
     {
-        $db = static::get_db();
+        $dm = static::get_dm();
 
-        return $db->transaction(function ($db) {
+        return $dm->transaction(function ($dm) {
             // Delete delegate first (foreign key constraint)
             $delegate = $this->delegate();
             if ($delegate !== null) {
@@ -521,9 +521,9 @@ trait DelegatedTypes
             throw new \InvalidArgumentException('Chain must have at least 2 levels (root + delegate)');
         }
 
-        $db = static::get_db();
+        $dm = static::get_dm();
 
-        return $db->transaction(function () use ($chain, $types) {
+        return $dm->transaction(function () use ($chain, $types) {
             $leaf_type = end($types);
             $type_path = implode('/', $types);
 
@@ -738,9 +738,9 @@ trait DelegatedTypes
      */
     public function update_chain(array $chain): static
     {
-        $db = static::get_db();
+        $dm = static::get_dm();
 
-        return $db->transaction(function () use ($chain) {
+        return $dm->transaction(function () use ($chain) {
             $current = $this;
             $level = 0;
             $types = array_keys($chain);
@@ -787,9 +787,9 @@ trait DelegatedTypes
      */
     public function delete_chain(): static
     {
-        $db = static::get_db();
+        $dm = static::get_dm();
 
-        return $db->transaction(function () {
+        return $dm->transaction(function () {
             // Get the full chain
             $chain = $this->get_chain();
 

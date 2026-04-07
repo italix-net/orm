@@ -233,7 +233,7 @@ class CommentRow extends ActiveRow
 echo "=== ActiveRow Example ===\n\n";
 
 // Create in-memory database
-$db = sqlite_memory();
+$dm = sqlite_memory();
 
 // Define tables
 $users = sqlite_table('users', [
@@ -275,13 +275,13 @@ $comments = sqlite_table('comments', [
 ]);
 
 // Create tables
-$db->create_tables($users, $profiles, $posts, $comments);
+$dm->create_tables($users, $profiles, $posts, $comments);
 
 // Set up persistence for row classes
-UserRow::set_persistence($db, $users);
-ProfileRow::set_persistence($db, $profiles);
-PostRow::set_persistence($db, $posts);
-CommentRow::set_persistence($db, $comments);
+UserRow::set_persistence($dm, $users);
+ProfileRow::set_persistence($dm, $profiles);
+PostRow::set_persistence($dm, $posts);
+CommentRow::set_persistence($dm, $comments);
 
 // ============================================
 // 1. Creating records with ActiveRow::create()
@@ -361,7 +361,7 @@ UserRow::create(['email' => 'jane@example.com', 'first_name' => 'Jane', 'last_na
 UserRow::create(['email' => 'bob@example.com', 'first_name' => 'Bob', 'last_name' => 'Wilson']);
 
 // Query as plain arrays, then wrap
-$rawUsers = $db->select()->from($users)->execute();
+$rawUsers = $dm->select()->from($users)->execute();
 $userRows = UserRow::wrap_many($rawUsers);
 
 echo "Users in database:\n";

@@ -22,7 +22,7 @@ use PDO;
 /**
  * Main ORM class providing database operations.
  */
-class IxOrm
+class DataManager
 {
     /** @var Driver Database driver */
     protected Driver $driver;
@@ -34,7 +34,7 @@ class IxOrm
     protected ?RelationalQueryBuilder $relational_builder = null;
 
     /**
-     * Create a new IxOrm instance
+     * Create a new DataManager instance
      */
     public function __construct(Driver $driver)
     {
@@ -230,13 +230,13 @@ class IxOrm
      *
      * Usage:
      *   // Simple query with parameters
-     *   $db->sql('SELECT * FROM users WHERE id = ?', [$userId])->all();
+     *   $dm->sql('SELECT * FROM users WHERE id = ?', [$userId])->all();
      *
      *   // Multiple parameters
-     *   $db->sql('SELECT * FROM users WHERE status = ? AND age > ?', ['active', 18])->all();
+     *   $dm->sql('SELECT * FROM users WHERE status = ? AND age > ?', ['active', 18])->all();
      *
      *   // Fluent builder
-     *   $db->sql()
+     *   $dm->sql()
      *      ->append('SELECT * FROM ')
      *      ->identifier('users')
      *      ->append(' WHERE id = ')
@@ -282,12 +282,12 @@ class IxOrm
      *
      * Usage:
      *   // Find many with relations
-     *   $users = $db->query($users_table)
+     *   $users = $dm->query($users_table)
      *       ->with(['posts' => true, 'profile' => true])
      *       ->find_many();
      *
      *   // Find first with nested relations
-     *   $user = $db->query($users_table)
+     *   $user = $dm->query($users_table)
      *       ->with([
      *           'posts' => [
      *               'with' => ['comments' => true]
@@ -297,7 +297,7 @@ class IxOrm
      *       ->find_first();
      *
      *   // Find by ID
-     *   $user = $db->query($users_table)
+     *   $user = $dm->query($users_table)
      *       ->with(['posts' => true])
      *       ->find(1);
      *
@@ -312,7 +312,7 @@ class IxOrm
     /**
      * Find many records with optional eager loading
      *
-     * Shorthand for: $db->query($table)->with($relations)->find_many()
+     * Shorthand for: $dm->query($table)->with($relations)->find_many()
      *
      * @param Table $table The table to query
      * @param array $options Options: 'with', 'where', 'order_by', 'limit', 'offset', 'columns'
@@ -353,7 +353,7 @@ class IxOrm
     /**
      * Find the first matching record with optional eager loading
      *
-     * Shorthand for: $db->query($table)->with($relations)->find_first()
+     * Shorthand for: $dm->query($table)->with($relations)->find_first()
      *
      * @param Table $table The table to query
      * @param array $options Options: 'with', 'where', 'order_by', 'columns'

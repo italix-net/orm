@@ -9,7 +9,7 @@ require_once __DIR__ . '/../../src/autoload.php';
 require_once __DIR__ . '/../../src/ActiveRow/functions.php';
 
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Examples\Ecommerce\Schema;
 use Examples\Ecommerce\Models\Thing;
 use Examples\Ecommerce\Models\Product;
@@ -37,7 +37,7 @@ spl_autoload_register(function ($class) {
  */
 class EcommerceTestRunner
 {
-    private IxOrm $db;
+    private DataManager $dm;
     private Schema $schema;
     private array $passed = [];
     private array $failed = [];
@@ -71,29 +71,29 @@ class EcommerceTestRunner
     private function setup(): void
     {
         $driver = Driver::sqlite_memory();
-        $this->db = new IxOrm($driver);
+        $this->dm = new DataManager($driver);
         $this->schema = new Schema();
 
-        $this->db->create_tables(...$this->schema->get_tables());
+        $this->dm->create_tables(...$this->schema->get_tables());
 
         // Thing hierarchy
-        Thing::set_persistence($this->db, $this->schema->things);
-        Product::set_persistence($this->db, $this->schema->products);
-        Order::set_persistence($this->db, $this->schema->orders);
-        OrderItem::set_persistence($this->db, $this->schema->order_items);
+        Thing::set_persistence($this->dm, $this->schema->things);
+        Product::set_persistence($this->dm, $this->schema->products);
+        Order::set_persistence($this->dm, $this->schema->orders);
+        OrderItem::set_persistence($this->dm, $this->schema->order_items);
 
         // Customer hierarchy
-        Customer::set_persistence($this->db, $this->schema->customers);
-        Person::set_persistence($this->db, $this->schema->persons);
-        Organization::set_persistence($this->db, $this->schema->organizations);
+        Customer::set_persistence($this->dm, $this->schema->customers);
+        Person::set_persistence($this->dm, $this->schema->persons);
+        Organization::set_persistence($this->dm, $this->schema->organizations);
 
         // PostalAddress
-        PostalAddress::set_persistence($this->db, $this->schema->postal_addresses);
+        PostalAddress::set_persistence($this->dm, $this->schema->postal_addresses);
     }
 
     private function teardown(): void
     {
-        $this->db->drop_tables(...array_reverse($this->schema->get_tables()));
+        $this->dm->drop_tables(...array_reverse($this->schema->get_tables()));
     }
 
     private function assert(string $name, bool $condition): void

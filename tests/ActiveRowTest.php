@@ -241,7 +241,7 @@ test("foreach iteration works", $keys === ['a', 'b', 'c']);
 section("Persistable Trait");
 // ============================================
 
-$db = sqlite_memory();
+$dm = sqlite_memory();
 $users_table = sqlite_table('test_users', [
     'id' => integer()->primary_key()->auto_increment(),
     'first_name' => varchar(100),
@@ -250,9 +250,9 @@ $users_table = sqlite_table('test_users', [
     'created_at' => text(),
     'updated_at' => text(),
 ]);
-$db->create_tables($users_table);
+$dm->create_tables($users_table);
 
-TestUserRow::set_persistence($db, $users_table);
+TestUserRow::set_persistence($dm, $users_table);
 
 test("has_persistence() returns true", TestUserRow::has_persistence());
 
@@ -336,9 +336,9 @@ $posts_table = sqlite_table('test_posts', [
     'updated_at' => text(),
     'deleted_at' => text(),
 ]);
-$db->create_tables($posts_table);
+$dm->create_tables($posts_table);
 
-TestPostRow::set_persistence($db, $posts_table);
+TestPostRow::set_persistence($dm, $posts_table);
 
 $post = TestPostRow::create([
     'title' => 'Test Post',

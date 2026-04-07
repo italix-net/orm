@@ -229,67 +229,67 @@ echo "\n";
 
 echo "--- Test Group: Query Execution ---\n";
 
-$db = sqlite_memory();
-$db->create_tables($users, $profiles, $posts, $comments, $tags, $post_tags, $media);
+$dm = sqlite_memory();
+$dm->create_tables($users, $profiles, $posts, $comments, $tags, $post_tags, $media);
 
 // Insert test data
-$db->insert($users)->values([
+$dm->insert($users)->values([
     ['name' => 'Alice', 'email' => 'alice@example.com'],
     ['name' => 'Bob', 'email' => 'bob@example.com'],
 ])->execute();
 
-$db->insert($profiles)->values([
+$dm->insert($profiles)->values([
     ['user_id' => 1, 'bio' => 'Alice bio'],
     ['user_id' => 2, 'bio' => 'Bob bio'],
 ])->execute();
 
-$db->insert($posts)->values([
+$dm->insert($posts)->values([
     ['author_id' => 1, 'title' => 'Post 1', 'published' => true],
     ['author_id' => 1, 'title' => 'Post 2', 'published' => false],
     ['author_id' => 2, 'title' => 'Post 3', 'published' => true],
 ])->execute();
 
-$db->insert($comments)->values([
+$dm->insert($comments)->values([
     ['post_id' => 1, 'user_id' => 2, 'content' => 'Comment 1'],
     ['post_id' => 1, 'user_id' => 1, 'content' => 'Comment 2'],
     ['post_id' => 2, 'user_id' => 2, 'content' => 'Comment 3'],
 ])->execute();
 
-$db->insert($tags)->values([
+$dm->insert($tags)->values([
     ['name' => 'php'],
     ['name' => 'orm'],
 ])->execute();
 
-$db->insert($post_tags)->values([
+$dm->insert($post_tags)->values([
     ['post_id' => 1, 'tag_id' => 1],
     ['post_id' => 1, 'tag_id' => 2],
     ['post_id' => 2, 'tag_id' => 1],
 ])->execute();
 
-$db->insert($media)->values([
+$dm->insert($media)->values([
     ['mediable_type' => 'post', 'mediable_id' => 1, 'url' => '/img/post1.jpg'],
     ['mediable_type' => 'post', 'mediable_id' => 1, 'url' => '/img/post1b.jpg'],
 ])->execute();
 
 // Test find_many
-$all_users = $db->query_table($users)->find_many();
+$all_users = $dm->query_table($users)->find_many();
 test('find_many() returns all users', count($all_users) === 2);
 
 // Test find_first
-$first_user = $db->query_table($users)->find_first();
+$first_user = $dm->query_table($users)->find_first();
 test('find_first() returns one user', $first_user !== null);
 test('find_first() returns array', is_array($first_user));
 
 // Test find_one (alias)
-$one_user = $db->query_table($users)->find_one();
+$one_user = $dm->query_table($users)->find_one();
 test('find_one() works as alias', $one_user !== null);
 
 // Test where
-$alice = $db->query_table($users)->where(eq($users->name, 'Alice'))->find_first();
+$alice = $dm->query_table($users)->where(eq($users->name, 'Alice'))->find_first();
 test('where() filters correctly', $alice['name'] === 'Alice');
 
 // Test limit/offset
-$limited = $db->query_table($users)->limit(1)->find_many();
+$limited = $dm->query_table($users)->limit(1)->find_many();
 test('limit() works', count($limited) === 1);
 
 echo "\n";
@@ -301,7 +301,7 @@ echo "\n";
 echo "--- Test Group: Eager Loading ---\n";
 
 // One-to-one eager loading
-$users_with_profile = $db->query_table($users)
+$users_with_profile = $dm->query_table($users)
     ->with(['profile' => true])
     ->find_many();
 
@@ -310,7 +310,7 @@ test('One-to-one relation is array', is_array($users_with_profile[0]['profile'])
 test('One-to-one relation has data', $users_with_profile[0]['profile']['bio'] === 'Alice bio');
 
 // One-to-many eager loading
-$users_with_posts = $db->query_table($users)
+$users_with_posts = $dm->query_table($users)
     ->with(['posts' => true])
     ->where(eq($users->id, 1))
     ->find_first();
@@ -320,7 +320,7 @@ test('One-to-many relation is array of arrays', is_array($users_with_posts['post
 test('One-to-many returns correct count', count($users_with_posts['posts']) === 2);
 
 // Many-to-one eager loading
-$posts_with_author = $db->query_table($posts)
+$posts_with_author = $dm->query_table($posts)
     ->with(['author' => true])
     ->find_many();
 
@@ -328,7 +328,7 @@ test('Eager loads many-to-one relation', isset($posts_with_author[0]['author']))
 test('Many-to-one relation has correct data', $posts_with_author[0]['author']['name'] === 'Alice');
 
 // Many-to-many eager loading
-$posts_with_tags = $db->query_table($posts)
+$posts_with_tags = $dm->query_table($posts)
     ->with(['tags' => true])
     ->where(eq($posts->id, 1))
     ->find_first();
@@ -337,7 +337,7 @@ test('Eager loads many-to-many relation', isset($posts_with_tags['tags']));
 test('Many-to-many returns correct count', count($posts_with_tags['tags']) === 2);
 
 // Polymorphic many eager loading
-$posts_with_media = $db->query_table($posts)
+$posts_with_media = $dm->query_table($posts)
     ->with(['media' => true])
     ->where(eq($posts->id, 1))
     ->find_first();
@@ -353,7 +353,7 @@ echo "\n";
 
 echo "--- Test Group: Nested Relations ---\n";
 
-$users_nested = $db->query_table($users)
+$users_nested = $dm->query_table($users)
     ->with([
         'posts' => [
             'with' => ['comments' => true]
@@ -373,7 +373,7 @@ echo "\n";
 
 echo "--- Test Group: Relation Aliases ---\n";
 
-$posts_aliased = $db->query_table($posts)
+$posts_aliased = $dm->query_table($posts)
     ->with([
         'writer:author' => true  // Alias 'author' as 'writer'
     ])
@@ -390,7 +390,7 @@ echo "\n";
 
 echo "--- Test Group: Shorthand Methods ---\n";
 
-$found = $db->find_many($users, [
+$found = $dm->find_many($users, [
     'with' => ['profile' => true],
     'limit' => 10,
 ]);
@@ -398,7 +398,7 @@ $found = $db->find_many($users, [
 test('find_many shorthand works', count($found) === 2);
 test('find_many shorthand loads relations', isset($found[0]['profile']));
 
-$first = $db->find_first($users, [
+$first = $dm->find_first($users, [
     'with' => ['posts' => true],
     'where' => eq($users->id, 1),
 ]);
@@ -415,7 +415,7 @@ echo "\n";
 
 echo "--- Test Group: Filtered Relations ---\n";
 
-$users_published = $db->query_table($users)
+$users_published = $dm->query_table($users)
     ->with([
         'posts' => [
             'where' => eq($posts->published, true),
@@ -443,7 +443,7 @@ use Italix\Orm\Relations\RelationalQueryBuilder;
 // We test that queries are built correctly for each dialect
 
 // MySQL dialect test
-$mysql_builder = new RelationalQueryBuilder($db->get_connection(), 'mysql');
+$mysql_builder = new RelationalQueryBuilder($dm->get_connection(), 'mysql');
 $mysql_query = $mysql_builder->query($users)->where(eq($users->id, 1));
 
 // Get SQL by reflection (we can't execute on wrong dialect, but can verify SQL format)
@@ -456,7 +456,7 @@ test('MySQL uses backtick quoting', strpos($mysql_sql, '`users`') !== false);
 test('MySQL uses ? placeholders', strpos($mysql_sql, '?') !== false);
 
 // PostgreSQL dialect test
-$pg_builder = new RelationalQueryBuilder($db->get_connection(), 'postgresql');
+$pg_builder = new RelationalQueryBuilder($dm->get_connection(), 'postgresql');
 $pg_query = $pg_builder->query($users)->where(eq($users->id, 1));
 $params = [];
 $pg_sql = $method->invoke($pg_query, $params);
@@ -464,7 +464,7 @@ test('PostgreSQL uses double-quote quoting', strpos($pg_sql, '"users"') !== fals
 test('PostgreSQL uses $1 placeholders', strpos($pg_sql, '$1') !== false);
 
 // SQLite dialect test
-$sqlite_builder = new RelationalQueryBuilder($db->get_connection(), 'sqlite');
+$sqlite_builder = new RelationalQueryBuilder($dm->get_connection(), 'sqlite');
 $sqlite_query = $sqlite_builder->query($users)->where(eq($users->id, 1));
 $params = [];
 $sqlite_sql = $method->invoke($sqlite_query, $params);
@@ -472,7 +472,7 @@ test('SQLite uses double-quote quoting', strpos($sqlite_sql, '"users"') !== fals
 test('SQLite uses ? placeholders', strpos($sqlite_sql, '?') !== false);
 
 // Supabase dialect test
-$supabase_builder = new RelationalQueryBuilder($db->get_connection(), 'supabase');
+$supabase_builder = new RelationalQueryBuilder($dm->get_connection(), 'supabase');
 $supabase_query = $supabase_builder->query($users)->where(eq($users->id, 1));
 $params = [];
 $supabase_sql = $method->invoke($supabase_query, $params);

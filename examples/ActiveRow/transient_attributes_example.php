@@ -13,7 +13,7 @@ use Italix\Orm\Schema\Table;
 use Italix\Orm\ActiveRow\ActiveRow;
 use Italix\Orm\ActiveRow\Traits\Persistable;
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 use function Italix\Orm\Schema\bigint;
 use function Italix\Orm\Schema\varchar;
@@ -95,10 +95,10 @@ class User extends ActiveRow
 // ============================================================
 
 $driver = Driver::sqlite_memory();
-$db = new IxOrm($driver);
-$db->create_tables($users);
+$dm = new DataManager($driver);
+$dm->create_tables($users);
 
-User::set_persistence($db, $users);
+User::set_persistence($dm, $users);
 
 echo "=== Transient Attributes Example ===\n\n";
 

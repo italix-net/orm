@@ -13,20 +13,20 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Migration;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 /**
  * Introspects existing database schemas and compares them.
  */
 class SchemaIntrospector
 {
-    protected IxOrm $db;
+    protected DataManager $dm;
     protected string $dialect;
 
-    public function __construct(IxOrm $db)
+    public function __construct(DataManager $dm)
     {
-        $this->db = $db;
-        $this->dialect = $db->get_driver()->get_dialect_name();
+        $this->dm = $dm;
+        $this->dialect = $dm->get_driver()->get_dialect_name();
     }
 
     /**
@@ -49,20 +49,20 @@ class SchemaIntrospector
     public function get_tables(): array
     {
         if ($this->dialect === 'sqlite') {
-            $result = $this->db->query(
+            $result = $this->dm->query(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'ix_migrations'"
             );
             return array_column($result, 'name');
         }
         
         if ($this->dialect === 'mysql') {
-            $result = $this->db->query("SHOW TABLES");
+            $result = $this->dm->query("SHOW TABLES");
             $tables = array_map(fn($row) => array_values($row)[0], $result);
             return array_filter($tables, fn($t) => $t !== 'ix_migrations');
         }
         
         // PostgreSQL / Supabase
-        $result = $this->db->query(
+        $result = $this->dm->query(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'ix_migrations'"
         );
         return array_column($result, 'tablename');
@@ -89,7 +89,7 @@ class SchemaIntrospector
      */
     protected function get_sqlite_columns(string $table): array
     {
-        $result = $this->db->query("PRAGMA table_info({$table})");
+        $result = $this->dm->query("PRAGMA table_info({$table})");
         $columns = [];
         
         foreach ($result as $row) {
@@ -132,7 +132,7 @@ class SchemaIntrospector
      */
     protected function get_mysql_columns(string $table): array
     {
-        $result = $this->db->query("SHOW FULL COLUMNS FROM {$table}");
+        $result = $this->dm->query("SHOW FULL COLUMNS FROM {$table}");
         $columns = [];
         
         foreach ($result as $row) {
@@ -188,7 +188,7 @@ class SchemaIntrospector
      */
     protected function get_postgresql_columns(string $table): array
     {
-        $result = $this->db->query("
+        $result = $this->dm->query("
             SELECT 
                 c.column_name,
                 c.data_type,
@@ -204,7 +204,7 @@ class SchemaIntrospector
         ", [$table]);
         
         // Get primary key info
-        $pk_result = $this->db->query("
+        $pk_result = $this->dm->query("
             SELECT a.attname
             FROM pg_index i
             JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
@@ -277,7 +277,7 @@ class SchemaIntrospector
      */
     protected function get_sqlite_indexes(string $table): array
     {
-        $result = $this->db->query("PRAGMA index_list({$table})");
+        $result = $this->dm->query("PRAGMA index_list({$table})");
         $indexes = [];
         
         foreach ($result as $row) {
@@ -285,7 +285,7 @@ class SchemaIntrospector
                 continue;
             }
             
-            $cols = $this->db->query("PRAGMA index_info({$row['name']})");
+            $cols = $this->dm->query("PRAGMA index_info({$row['name']})");
             
             $indexes[] = [
                 'name' => $row['name'],
@@ -303,7 +303,7 @@ class SchemaIntrospector
      */
     protected function get_mysql_indexes(string $table): array
     {
-        $result = $this->db->query("SHOW INDEX FROM {$table}");
+        $result = $this->dm->query("SHOW INDEX FROM {$table}");
         $indexes = [];
         
         foreach ($result as $row) {
@@ -330,7 +330,7 @@ class SchemaIntrospector
      */
     protected function get_postgresql_indexes(string $table): array
     {
-        $result = $this->db->query("
+        $result = $this->dm->query("
             SELECT
                 i.relname as index_name,
                 ix.indisunique as is_unique,
@@ -413,7 +413,7 @@ class SchemaIntrospector
      */
     protected function get_sqlite_foreign_keys(string $table): array
     {
-        $result = $this->db->query("PRAGMA foreign_key_list({$table})");
+        $result = $this->dm->query("PRAGMA foreign_key_list({$table})");
         $fks = [];
         
         foreach ($result as $row) {
@@ -435,7 +435,7 @@ class SchemaIntrospector
      */
     protected function get_mysql_foreign_keys(string $table): array
     {
-        $result = $this->db->query("
+        $result = $this->dm->query("
             SELECT 
                 CONSTRAINT_NAME,
                 COLUMN_NAME,
@@ -448,7 +448,7 @@ class SchemaIntrospector
         ", [$table]);
         
         // Get ON DELETE/UPDATE actions
-        $constraints = $this->db->query("
+        $constraints = $this->dm->query("
             SELECT
                 CONSTRAINT_NAME,
                 DELETE_RULE,
@@ -487,7 +487,7 @@ class SchemaIntrospector
      */
     protected function get_postgresql_foreign_keys(string $table): array
     {
-        $result = $this->db->query("
+        $result = $this->dm->query("
             SELECT
                 tc.constraint_name,
                 kcu.column_name,

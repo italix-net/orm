@@ -15,7 +15,7 @@ require_once __DIR__ . '/../../src/autoload.php';
 require_once __DIR__ . '/../../src/ActiveRow/functions.php';
 
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Examples\Ecommerce\Schema;
 use Examples\Ecommerce\Models\Thing;
 use Examples\Ecommerce\Models\Product;
@@ -41,15 +41,15 @@ echo "=== Schema.org E-commerce Example ===\n\n";
 // ============================================================
 
 $driver = Driver::sqlite_memory();
-$db = new IxOrm($driver);
+$dm = new DataManager($driver);
 $schema = new Schema();
 
-$db->create_tables(...$schema->get_tables());
+$dm->create_tables(...$schema->get_tables());
 
-Thing::set_persistence($db, $schema->things);
-Product::set_persistence($db, $schema->products);
-Order::set_persistence($db, $schema->orders);
-OrderItem::set_persistence($db, $schema->order_items);
+Thing::set_persistence($dm, $schema->things);
+Product::set_persistence($dm, $schema->products);
+Order::set_persistence($dm, $schema->orders);
+OrderItem::set_persistence($dm, $schema->order_items);
 
 // ============================================================
 // CREATE PRODUCTS

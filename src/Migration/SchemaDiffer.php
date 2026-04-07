@@ -12,7 +12,7 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Migration;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Italix\Orm\Schema\Table;
 
 /**
@@ -23,10 +23,10 @@ class SchemaDiffer
     protected SchemaIntrospector $introspector;
     protected string $dialect;
 
-    public function __construct(IxOrm $db)
+    public function __construct(DataManager $dm)
     {
-        $this->introspector = new SchemaIntrospector($db);
-        $this->dialect = $db->get_driver()->get_dialect_name();
+        $this->introspector = new SchemaIntrospector($dm);
+        $this->dialect = $dm->get_driver()->get_dialect_name();
     }
 
     /**

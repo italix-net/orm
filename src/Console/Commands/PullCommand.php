@@ -29,8 +29,8 @@ class PullCommand extends Command
 
     public function handle(): int
     {
-        $db = $this->get_database();
-        $introspector = new SchemaIntrospector($db);
+        $dm = $this->get_database();
+        $introspector = new SchemaIntrospector($dm);
         
         $tables = $introspector->get_tables();
         
@@ -126,10 +126,10 @@ PHP;
     protected function init_migration(array $tables): void
     {
         $migrator = $this->get_migrator();
-        $db = $this->get_database();
+        $dm = $this->get_database();
         
         // Generate and save migration file
-        $introspector = new SchemaIntrospector($db);
+        $introspector = new SchemaIntrospector($dm);
         $code = $this->generate_migration_code($introspector, $tables);
         
         $timestamp = date('Y_m_d_His');
@@ -146,7 +146,7 @@ PHP;
         $migration_name = basename($filename, '.php');
         $table = $migrator->get_migrations_table();
         
-        $db->execute(
+        $dm->execute(
             "INSERT INTO {$table} (migration, batch) VALUES (?, 0)",
             [$migration_name]
         );

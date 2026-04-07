@@ -159,11 +159,11 @@ trait SoftDeletes
             throw new \LogicException('Cannot delete a record that does not exist');
         }
 
-        $db = static::get_db();
+        $dm = static::get_dm();
         $table = static::get_table();
         $pk = static::$primary_key;
 
-        $db->delete($table)
+        $dm->delete($table)
             ->where(\Italix\Orm\Operators\eq($table->$pk, $this[$pk]))
             ->execute();
 

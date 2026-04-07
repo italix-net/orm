@@ -16,51 +16,51 @@ namespace Italix\Orm;
 use Italix\Orm\Dialects\Driver;
 
 /**
- * Create an IxOrm instance with configuration
+ * Create a DataManager instance with configuration
  */
-function ix_orm(Driver $driver): IxOrm
+function ix_orm(Driver $driver): DataManager
 {
-    return new IxOrm($driver);
+    return new DataManager($driver);
 }
 
 /**
  * Create a MySQL ORM instance
  */
-function mysql(array $config): IxOrm
+function mysql(array $config): DataManager
 {
-    return new IxOrm(Driver::mysql($config));
+    return new DataManager(Driver::mysql($config));
 }
 
 /**
  * Create a PostgreSQL ORM instance
  */
-function postgres(array $config): IxOrm
+function postgres(array $config): DataManager
 {
-    return new IxOrm(Driver::postgres($config));
+    return new DataManager(Driver::postgres($config));
 }
 
 /**
  * Create a SQLite ORM instance
  */
-function sqlite(array $config): IxOrm
+function sqlite(array $config): DataManager
 {
-    return new IxOrm(Driver::sqlite($config));
+    return new DataManager(Driver::sqlite($config));
 }
 
 /**
  * Create a SQLite in-memory ORM instance
  */
-function sqlite_memory(): IxOrm
+function sqlite_memory(): DataManager
 {
-    return new IxOrm(Driver::sqlite_memory());
+    return new DataManager(Driver::sqlite_memory());
 }
 
 /**
  * Create a Supabase ORM instance
  */
-function supabase(array $config): IxOrm
+function supabase(array $config): DataManager
 {
-    return new IxOrm(Driver::supabase($config));
+    return new DataManager(Driver::supabase($config));
 }
 
 /**
@@ -72,8 +72,8 @@ function supabase_from_credentials(
     string $database = 'postgres',
     string $region = 'us-east-1',
     bool $pooling = true
-): IxOrm {
-    return new IxOrm(Driver::supabase_from_credentials(
+): DataManager {
+    return new DataManager(Driver::supabase_from_credentials(
         $project_ref,
         $password,
         $database,
@@ -85,9 +85,9 @@ function supabase_from_credentials(
 /**
  * Create an ORM instance from a connection string
  */
-function from_connection_string(string $connection_string): IxOrm
+function from_connection_string(string $connection_string): DataManager
 {
-    return new IxOrm(Driver::from_connection_string($connection_string));
+    return new DataManager(Driver::from_connection_string($connection_string));
 }
 
 /**
@@ -108,7 +108,7 @@ function from_connection_string(string $connection_string): IxOrm
  *       ->value('%@gmail.com');
  *
  *   // Execute with a connection
- *   $db->sql('SELECT * FROM users WHERE id = ?', [$id])->all();
+ *   $dm->sql('SELECT * FROM users WHERE id = ?', [$id])->all();
  *
  * @param string $query SQL query with ? placeholders
  * @param array $params Parameter bindings

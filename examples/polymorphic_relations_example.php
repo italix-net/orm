@@ -124,37 +124,37 @@ $videos_relations = define_relations($videos, function($r) use ($videos, $commen
 // 3. Create Database and Insert Data
 // ============================================
 
-$db = sqlite_memory();
-$db->create_tables($posts, $videos, $comments, $likes);
+$dm = sqlite_memory();
+$dm->create_tables($posts, $videos, $comments, $likes);
 
 // Insert posts
-$db->insert($posts)->values([
+$dm->insert($posts)->values([
     ['title' => 'Introduction to PHP', 'content' => 'PHP is a popular language...'],
     ['title' => 'Advanced ORM Patterns', 'content' => 'Learn about relations...'],
 ])->execute();
 
 // Insert videos
-$db->insert($videos)->values([
+$dm->insert($videos)->values([
     ['title' => 'PHP Tutorial Part 1', 'url' => 'https://example.com/video1', 'duration' => 600],
     ['title' => 'Database Design', 'url' => 'https://example.com/video2', 'duration' => 900],
 ])->execute();
 
 // Insert comments on posts
-$db->insert($comments)->values([
+$dm->insert($comments)->values([
     ['commentable_type' => 'post', 'commentable_id' => 1, 'author_name' => 'Alice', 'content' => 'Great article!'],
     ['commentable_type' => 'post', 'commentable_id' => 1, 'author_name' => 'Bob', 'content' => 'Very helpful, thanks!'],
     ['commentable_type' => 'post', 'commentable_id' => 2, 'author_name' => 'Charlie', 'content' => 'Interesting patterns.'],
 ])->execute();
 
 // Insert comments on videos
-$db->insert($comments)->values([
+$dm->insert($comments)->values([
     ['commentable_type' => 'video', 'commentable_id' => 1, 'author_name' => 'Dave', 'content' => 'Nice tutorial!'],
     ['commentable_type' => 'video', 'commentable_id' => 1, 'author_name' => 'Eve', 'content' => 'Please make more!'],
     ['commentable_type' => 'video', 'commentable_id' => 2, 'author_name' => 'Frank', 'content' => 'Clear explanation.'],
 ])->execute();
 
 // Insert likes
-$db->insert($likes)->values([
+$dm->insert($likes)->values([
     ['likeable_type' => 'post', 'likeable_id' => 1, 'user_name' => 'Alice'],
     ['likeable_type' => 'post', 'likeable_id' => 1, 'user_name' => 'Bob'],
     ['likeable_type' => 'video', 'likeable_id' => 1, 'user_name' => 'Charlie'],
@@ -170,7 +170,7 @@ echo "=== Polymorphic Relations Example ===\n\n";
 
 // Query 1: Posts with polymorphic comments
 echo "1. Posts with their comments:\n";
-$all_posts = $db->query_table($posts)
+$all_posts = $dm->query_table($posts)
     ->with(['comments' => true])
     ->find_many();
 
@@ -184,7 +184,7 @@ echo "\n";
 
 // Query 2: Videos with polymorphic comments
 echo "2. Videos with their comments:\n";
-$all_videos = $db->query_table($videos)
+$all_videos = $dm->query_table($videos)
     ->with(['comments' => true])
     ->find_many();
 
@@ -198,7 +198,7 @@ echo "\n";
 
 // Query 3: Comments with their polymorphic parent (commentable)
 echo "3. Comments with their parent (polymorphic 'belongs to'):\n";
-$all_comments = $db->query_table($comments)
+$all_comments = $dm->query_table($comments)
     ->with(['commentable' => true])
     ->find_many();
 
@@ -211,7 +211,7 @@ echo "\n";
 
 // Query 4: Posts and Videos with likes count
 echo "4. Posts with likes:\n";
-$posts_with_likes = $db->query_table($posts)
+$posts_with_likes = $dm->query_table($posts)
     ->with(['likes' => true])
     ->find_many();
 
@@ -222,7 +222,7 @@ foreach ($posts_with_likes as $post) {
 echo "\n";
 
 echo "5. Videos with likes:\n";
-$videos_with_likes = $db->query_table($videos)
+$videos_with_likes = $dm->query_table($videos)
     ->with(['likes' => true])
     ->find_many();
 
@@ -234,7 +234,7 @@ echo "\n";
 
 // Query 5: Combined - Posts with comments and likes
 echo "6. Posts with both comments and likes:\n";
-$posts_full = $db->query_table($posts)
+$posts_full = $dm->query_table($posts)
     ->with([
         'comments' => true,
         'likes' => true,

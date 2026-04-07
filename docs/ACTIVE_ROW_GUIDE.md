@@ -32,7 +32,7 @@ class UserRow extends ActiveRow
 }
 
 // Setup persistence (once at bootstrap)
-UserRow::set_persistence($db, $users_table);
+UserRow::set_persistence($dm, $users_table);
 
 // Create a new row
 $user = UserRow::make([
@@ -333,7 +333,7 @@ class UserRow extends ActiveRow
 }
 
 // Setup (once at bootstrap)
-UserRow::set_persistence($db, $users_table);
+UserRow::set_persistence($dm, $users_table);
 
 // Create
 $user = UserRow::create(['name' => 'New User', 'email' => 'new@example.com']);

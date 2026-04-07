@@ -166,41 +166,41 @@ $tags_relations = define_relations($tags, function($r) use ($posts, $post_tags, 
 // ============================================
 
 // Create database connection
-$db = sqlite_memory();
+$dm = sqlite_memory();
 
 // Create tables
-$db->create_tables($users, $profiles, $posts, $comments, $tags, $post_tags);
+$dm->create_tables($users, $profiles, $posts, $comments, $tags, $post_tags);
 
 // Insert sample data
-$db->insert($users)->values([
+$dm->insert($users)->values([
     ['name' => 'Alice', 'email' => 'alice@example.com'],
     ['name' => 'Bob', 'email' => 'bob@example.com'],
 ])->execute();
 
-$db->insert($profiles)->values([
+$dm->insert($profiles)->values([
     ['user_id' => 1, 'bio' => 'Software developer', 'avatar_url' => '/avatars/alice.jpg'],
     ['user_id' => 2, 'bio' => 'Designer', 'avatar_url' => '/avatars/bob.jpg'],
 ])->execute();
 
-$db->insert($posts)->values([
+$dm->insert($posts)->values([
     ['author_id' => 1, 'title' => 'Hello World', 'content' => 'My first post!', 'published' => true],
     ['author_id' => 1, 'title' => 'PHP Tips', 'content' => 'Some PHP tips...', 'published' => true],
     ['author_id' => 2, 'title' => 'Design Patterns', 'content' => 'About design...', 'published' => false],
 ])->execute();
 
-$db->insert($comments)->values([
+$dm->insert($comments)->values([
     ['post_id' => 1, 'user_id' => 2, 'content' => 'Great post!'],
     ['post_id' => 1, 'user_id' => 1, 'content' => 'Thanks!'],
     ['post_id' => 2, 'user_id' => 2, 'content' => 'Very helpful!'],
 ])->execute();
 
-$db->insert($tags)->values([
+$dm->insert($tags)->values([
     ['name' => 'php'],
     ['name' => 'tutorial'],
     ['name' => 'design'],
 ])->execute();
 
-$db->insert($post_tags)->values([
+$dm->insert($post_tags)->values([
     ['post_id' => 1, 'tag_id' => 1],
     ['post_id' => 1, 'tag_id' => 2],
     ['post_id' => 2, 'tag_id' => 1],
@@ -213,7 +213,7 @@ echo "=== Relations Example ===\n\n";
 // Query 1: Find all users with their profiles
 // ============================================
 echo "1. Users with profiles:\n";
-$all_users = $db->query_table($users)
+$all_users = $dm->query_table($users)
     ->with(['profile' => true])
     ->find_many();
 
@@ -226,7 +226,7 @@ echo "\n";
 // Query 2: Find a user with posts and comments
 // ============================================
 echo "2. User with posts and comments (nested relations):\n";
-$user_with_posts = $db->query_table($users)
+$user_with_posts = $dm->query_table($users)
     ->with([
         'posts' => [
             'with' => [
@@ -250,7 +250,7 @@ echo "\n";
 // Query 3: Find posts with author (many-to-one)
 // ============================================
 echo "3. Posts with authors:\n";
-$all_posts = $db->query_table($posts)
+$all_posts = $dm->query_table($posts)
     ->with(['author' => true])
     ->order_by(desc($posts->created_at))
     ->find_many();
@@ -264,7 +264,7 @@ echo "\n";
 // Query 4: Find posts with tags (many-to-many)
 // ============================================
 echo "4. Posts with tags (many-to-many):\n";
-$posts_with_tags = $db->query_table($posts)
+$posts_with_tags = $dm->query_table($posts)
     ->with(['tags' => true])
     ->find_many();
 
@@ -278,7 +278,7 @@ echo "\n";
 // Query 5: Using relation aliases
 // ============================================
 echo "5. Using aliases:\n";
-$posts_aliased = $db->query_table($posts)
+$posts_aliased = $dm->query_table($posts)
     ->with([
         'writer:author' => true,  // Alias 'author' relation as 'writer'
     ])
@@ -293,7 +293,7 @@ echo "\n";
 // Query 6: Filtered and ordered relations
 // ============================================
 echo "6. User with only published posts (filtered relation):\n";
-$user_published = $db->query_table($users)
+$user_published = $dm->query_table($users)
     ->with([
         'posts' => [
             'where' => eq($posts->published, true),
@@ -315,7 +315,7 @@ echo "\n";
 // Query 7: Using shorthand methods
 // ============================================
 echo "7. Using shorthand find_many:\n";
-$users_shorthand = $db->find_many($users, [
+$users_shorthand = $dm->find_many($users, [
     'with' => ['profile' => true, 'posts' => true],
     'order_by' => desc($users->id),
     'limit' => 10,

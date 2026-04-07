@@ -11,7 +11,7 @@ declare(strict_types=1);
 namespace Italix\Orm\Schema;
 
 use Italix\Contracts\RelationMeta;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 /**
  * Adapter that implements RelationMeta for foreign key relationships.
@@ -30,8 +30,8 @@ class RelationMetaAdapter implements RelationMeta
     /** @var string Label column in target table */
     protected string $foreign_label;
 
-    /** @var IxOrm|null Database connection for fetching options */
-    protected ?IxOrm $db = null;
+    /** @var DataManager|null Database connection for fetching options */
+    protected ?DataManager $dm = null;
 
     /** @var callable|null Custom fetcher for options */
     protected $fetcher = null;
@@ -86,12 +86,12 @@ class RelationMetaAdapter implements RelationMeta
     /**
      * Set the database connection for fetching options.
      *
-     * @param IxOrm $db
+     * @param DataManager $dm
      * @return self
      */
-    public function set_db(IxOrm $db): self
+    public function set_dm(DataManager $dm): self
     {
-        $this->db = $db;
+        $this->dm = $dm;
         return $this;
     }
 
@@ -141,7 +141,7 @@ class RelationMetaAdapter implements RelationMeta
         }
 
         // Use database connection if available
-        if ($this->db !== null) {
+        if ($this->dm !== null) {
             return $this->fetch_from_db($max_options);
         }
 
@@ -157,8 +157,8 @@ class RelationMetaAdapter implements RelationMeta
      */
     protected function fetch_from_db(int $max_options): ?array
     {
-        $pdo = $this->db->get_pdo();
-        $dialect = $this->db->get_dialect();
+        $pdo = $this->dm->get_pdo();
+        $dialect = $this->dm->get_dialect();
 
         // First check count
         $count_sql = sprintf(

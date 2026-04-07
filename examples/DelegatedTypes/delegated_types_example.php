@@ -14,7 +14,7 @@ require_once __DIR__ . '/../../src/autoload.php';
 require_once __DIR__ . '/../../src/ActiveRow/functions.php';
 
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Examples\DelegatedTypes\Schema;
 use Examples\DelegatedTypes\Models\Thing;
 use Examples\DelegatedTypes\Models\Book;
@@ -44,21 +44,21 @@ echo "=== Delegated Types Example ===\n\n";
 echo "1. Setting up database...\n";
 
 $driver = Driver::sqlite_memory();
-$db = new IxOrm($driver);
+$dm = new DataManager($driver);
 $schema = new Schema();
 
 // Create tables
-$db->create_tables(...$schema->get_tables());
+$dm->create_tables(...$schema->get_tables());
 echo "   Created tables: " . implode(', ', array_map(fn($t) => $t->get_name(), $schema->get_tables())) . "\n";
 
 // Setup persistence for all model classes
-Thing::set_persistence($db, $schema->things);
-Book::set_persistence($db, $schema->books);
-Movie::set_persistence($db, $schema->movies);
-Article::set_persistence($db, $schema->articles);
-Person::set_persistence($db, $schema->persons);
-Organization::set_persistence($db, $schema->organizations);
-Contribution::set_persistence($db, $schema->contributions);
+Thing::set_persistence($dm, $schema->things);
+Book::set_persistence($dm, $schema->books);
+Movie::set_persistence($dm, $schema->movies);
+Article::set_persistence($dm, $schema->articles);
+Person::set_persistence($dm, $schema->persons);
+Organization::set_persistence($dm, $schema->organizations);
+Contribution::set_persistence($dm, $schema->contributions);
 
 echo "   Models configured\n\n";
 
@@ -291,7 +291,7 @@ echo "    New page count: " . $design_patterns->delegate()['number_of_pages'] . 
 // Cleanup
 // ============================================
 echo "12. Cleanup...\n";
-$db->drop_tables(...array_reverse($schema->get_tables()));
+$dm->drop_tables(...array_reverse($schema->get_tables()));
 echo "    Tables dropped\n\n";
 
 echo "=== Example completed successfully ===\n";

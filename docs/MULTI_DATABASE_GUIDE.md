@@ -126,12 +126,12 @@ $user_groups = sqlite_table('user_groups', [...]);
 
 ```php
 // ❌ AVOID: Database-specific SQL functions
-$db->sql("SELECT DATE_FORMAT(created_at, '%Y-%m') FROM posts")->all();     // MySQL
-$db->sql("SELECT TO_CHAR(created_at, 'YYYY-MM') FROM posts")->all();       // PostgreSQL
-$db->sql("SELECT strftime('%Y-%m', created_at) FROM posts")->all();        // SQLite
+$dm->sql("SELECT DATE_FORMAT(created_at, '%Y-%m') FROM posts")->all();     // MySQL
+$dm->sql("SELECT TO_CHAR(created_at, 'YYYY-MM') FROM posts")->all();       // PostgreSQL
+$dm->sql("SELECT strftime('%Y-%m', created_at) FROM posts")->all();        // SQLite
 
 // ✅ USE: Query builder and handle formatting in PHP
-$posts = $db->select([$posts->created_at])->from($posts)->execute();
+$posts = $dm->select([$posts->created_at])->from($posts)->execute();
 foreach ($posts as $post) {
     $formatted = date('Y-m', strtotime($post['created_at']));
 }
@@ -141,10 +141,10 @@ foreach ($posts as $post) {
 
 ```php
 // ❌ AVOID: Raw SQL with LIMIT (syntax varies)
-$db->sql("SELECT * FROM users LIMIT 10, 20")->all();  // MySQL: LIMIT offset, count
+$dm->sql("SELECT * FROM users LIMIT 10, 20")->all();  // MySQL: LIMIT offset, count
 
 // ✅ USE: Query builder (handles syntax per dialect)
-$db->select()->from($users)->limit(20)->offset(10)->execute();
+$dm->select()->from($users)->limit(20)->offset(10)->execute();
 ```
 
 ---
@@ -380,7 +380,7 @@ function create_schema(string $dialect): array
 
 // Usage
 $tables = create_schema('mysql');
-$db->create_tables(...array_values($tables));
+$dm->create_tables(...array_values($tables));
 ```
 
 ### Pattern 2: Modular Schema Classes
@@ -438,10 +438,10 @@ class AppSchema
 
 ```php
 // ❌ Raw SQL - dialect-specific issues
-$db->sql("SELECT * FROM users WHERE email LIKE '%@gmail.com'")->all();
+$dm->sql("SELECT * FROM users WHERE email LIKE '%@gmail.com'")->all();
 
 // ✅ Query builder - portable
-$db->select()
+$dm->select()
     ->from($users)
     ->where(like($users->email, '%@gmail.com'))
     ->execute();
@@ -471,10 +471,10 @@ use function Italix\Orm\Operators\{eq, ne, gt, gte, lt, lte, like, in_array, is_
 
 ```php
 // ❌ AVOID: CONCAT (syntax varies)
-$db->sql("SELECT CONCAT(first_name, ' ', last_name) FROM users")->all();
+$dm->sql("SELECT CONCAT(first_name, ' ', last_name) FROM users")->all();
 
 // ✅ USE: Select columns and concatenate in PHP
-$users = $db->select([$users->first_name, $users->last_name])->from($users)->execute();
+$users = $dm->select([$users->first_name, $users->last_name])->from($users)->execute();
 foreach ($users as $user) {
     $full_name = $user['first_name'] . ' ' . $user['last_name'];
 }
@@ -506,10 +506,10 @@ class UserRow extends ActiveRow
 
 ```php
 // ❌ AVOID: Database-specific date formatting
-$db->sql("SELECT DATE_FORMAT(created_at, '%Y-%m-%d') as date FROM posts")->all();
+$dm->sql("SELECT DATE_FORMAT(created_at, '%Y-%m-%d') as date FROM posts")->all();
 
 // ✅ USE: Format in PHP
-$posts = $db->select([$posts->created_at])->from($posts)->execute();
+$posts = $dm->select([$posts->created_at])->from($posts)->execute();
 foreach ($posts as $post) {
     $formatted = date('Y-m-d', strtotime($post['created_at']));
 }
@@ -638,19 +638,19 @@ class MultiDatabaseTest
             echo "\n=== Testing on $dialect ===\n";
 
             try {
-                $db = self::create_connection($dialect);
+                $dm = self::create_connection($dialect);
                 $schema = new AppSchema($dialect);
 
                 // Create tables
-                $db->create_tables(...$schema->get_all_tables());
+                $dm->create_tables(...$schema->get_all_tables());
 
                 // Run tests
-                self::test_crud($db, $schema);
-                self::test_relations($db, $schema);
-                self::test_queries($db, $schema);
+                self::test_crud($dm, $schema);
+                self::test_relations($dm, $schema);
+                self::test_queries($dm, $schema);
 
                 // Cleanup
-                $db->drop_tables(...array_reverse($schema->get_all_tables()));
+                $dm->drop_tables(...array_reverse($schema->get_all_tables()));
 
                 echo "✓ All tests passed for $dialect\n";
             } catch (\Exception $e) {
@@ -681,7 +681,7 @@ class MultiDatabaseTest
         }
     }
 
-    private static function test_crud($db, $schema): void
+    private static function test_crud($dm, $schema): void
     {
         // Test CRUD operations...
     }

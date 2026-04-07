@@ -310,7 +310,7 @@ class AuthorFactory
 echo "=== Schema.org CreativeWork with Polymorphic Authors ===\n\n";
 
 // Create in-memory database
-$db = sqlite_memory();
+$dm = sqlite_memory();
 
 // Define tables (simplified for this example)
 $persons = sqlite_table('persons', [
@@ -351,12 +351,12 @@ $authorships = sqlite_table('authorships', [
 ]);
 
 // Create tables
-$db->create_tables($persons, $organizations, $creative_works, $authorships);
+$dm->create_tables($persons, $organizations, $creative_works, $authorships);
 
 // Set up persistence
-PersonRow::set_persistence($db, $persons);
-OrganizationRow::set_persistence($db, $organizations);
-CreativeWorkRow::set_persistence($db, $creative_works);
+PersonRow::set_persistence($dm, $persons);
+OrganizationRow::set_persistence($dm, $organizations);
+CreativeWorkRow::set_persistence($dm, $creative_works);
 
 // ============================================
 // Create sample data
@@ -392,7 +392,7 @@ $org2 = OrganizationRow::create([
 ]);
 
 // Create creative works with authorships
-$work1_id = $db->insert($creative_works)->values([
+$work1_id = $dm->insert($creative_works)->values([
     'title' => 'Climate Change Impact on Global Health',
     'description' => 'A comprehensive study on climate change effects...',
     'work_type' => 'Article',
@@ -400,24 +400,24 @@ $work1_id = $db->insert($creative_works)->values([
     'created_at' => date('Y-m-d H:i:s'),
     'updated_at' => date('Y-m-d H:i:s'),
 ])->execute();
-$work1_id = $db->last_insert_id();
+$work1_id = $dm->last_insert_id();
 
 // Add authorships for work 1 (person + organization)
-$db->insert($authorships)->values([
+$dm->insert($authorships)->values([
     'work_id' => $work1_id,
     'author_type' => 'person',
     'author_id' => $person1['id'],
     'position' => 1,
 ])->execute();
 
-$db->insert($authorships)->values([
+$dm->insert($authorships)->values([
     'work_id' => $work1_id,
     'author_type' => 'organization',
     'author_id' => $org1['id'],
     'position' => 2,
 ])->execute();
 
-$db->insert($authorships)->values([
+$dm->insert($authorships)->values([
     'work_id' => $work1_id,
     'author_type' => 'person',
     'author_id' => $person2['id'],
@@ -425,7 +425,7 @@ $db->insert($authorships)->values([
 ])->execute();
 
 // Create another work
-$work2_id = $db->insert($creative_works)->values([
+$work2_id = $dm->insert($creative_works)->values([
     'title' => 'Modern PHP Design Patterns',
     'description' => 'An exploration of design patterns in PHP 8...',
     'work_type' => 'Book',
@@ -433,17 +433,17 @@ $work2_id = $db->insert($creative_works)->values([
     'created_at' => date('Y-m-d H:i:s'),
     'updated_at' => date('Y-m-d H:i:s'),
 ])->execute();
-$work2_id = $db->last_insert_id();
+$work2_id = $dm->last_insert_id();
 
 // Work 2 has only person authors
-$db->insert($authorships)->values([
+$dm->insert($authorships)->values([
     'work_id' => $work2_id,
     'author_type' => 'person',
     'author_id' => $person1['id'],
     'position' => 1,
 ])->execute();
 
-$db->insert($authorships)->values([
+$dm->insert($authorships)->values([
     'work_id' => $work2_id,
     'author_type' => 'person',
     'author_id' => $person2['id'],
@@ -459,7 +459,7 @@ echo "Loading works with authors...\n\n";
 // In a real scenario, you'd use the relations system
 // Here we manually join the data to demonstrate the wrapping
 
-$rawWorks = $db->select()->from($creative_works)->execute();
+$rawWorks = $dm->select()->from($creative_works)->execute();
 
 // For each work, load its authorships with author data
 $worksWithAuthors = [];
@@ -467,7 +467,7 @@ foreach ($rawWorks as $work) {
     $work['authorships'] = [];
 
     // Get authorships for this work
-    $workAuthorships = $db->sql(
+    $workAuthorships = $dm->sql(
         'SELECT * FROM authorships WHERE work_id = ? ORDER BY position',
         [$work['id']]
     )->all();
@@ -475,12 +475,12 @@ foreach ($rawWorks as $work) {
     foreach ($workAuthorships as $authorship) {
         // Load the author based on type
         if ($authorship['author_type'] === 'person') {
-            $author = $db->sql(
+            $author = $dm->sql(
                 'SELECT * FROM persons WHERE id = ?',
                 [$authorship['author_id']]
             )->one();
         } else {
-            $author = $db->sql(
+            $author = $dm->sql(
                 'SELECT * FROM organizations WHERE id = ?',
                 [$authorship['author_id']]
             )->one();

@@ -167,22 +167,22 @@ $contributors_relations = define_relations($creative_work_contributors, function
 // 3. Create Database with Indexes
 // ============================================
 
-$db = sqlite_memory();
-$db->create_tables($persons, $organizations, $creative_works, $creative_work_contributors);
+$dm = sqlite_memory();
+$dm->create_tables($persons, $organizations, $creative_works, $creative_work_contributors);
 
 // Create indexes for performance (critical for thousands of rows)
-$db->sql('CREATE INDEX idx_contributors_work_role ON creative_work_contributors(work_id, role)')->execute();
-$db->sql('CREATE INDEX idx_contributors_type_id ON creative_work_contributors(contributor_type, contributor_id)')->execute();
-$db->sql('CREATE INDEX idx_contributors_type_id_role ON creative_work_contributors(contributor_type, contributor_id, role)')->execute();
-$db->sql('CREATE INDEX idx_works_type ON creative_works(type)')->execute();
-$db->sql('CREATE INDEX idx_works_date ON creative_works(date_published)')->execute();
+$dm->sql('CREATE INDEX idx_contributors_work_role ON creative_work_contributors(work_id, role)')->execute();
+$dm->sql('CREATE INDEX idx_contributors_type_id ON creative_work_contributors(contributor_type, contributor_id)')->execute();
+$dm->sql('CREATE INDEX idx_contributors_type_id_role ON creative_work_contributors(contributor_type, contributor_id, role)')->execute();
+$dm->sql('CREATE INDEX idx_works_type ON creative_works(type)')->execute();
+$dm->sql('CREATE INDEX idx_works_date ON creative_works(date_published)')->execute();
 
 // ============================================
 // 4. Seed Sample Data
 // ============================================
 
 // Persons
-$db->insert($persons)->values([
+$dm->insert($persons)->values([
     ['name' => 'John Doe', 'email' => 'john@example.com'],
     ['name' => 'Jane Smith', 'email' => 'jane@example.com'],
     ['name' => 'Bob Wilson', 'email' => 'bob@example.com'],
@@ -190,14 +190,14 @@ $db->insert($persons)->values([
 ])->execute();
 
 // Organizations
-$db->insert($organizations)->values([
+$dm->insert($organizations)->values([
     ['name' => 'TechCorp', 'url' => 'https://techcorp.example.com'],
     ['name' => 'Research Institute', 'url' => 'https://research.example.com'],
     ['name' => 'OpenSource Foundation', 'url' => 'https://opensource.example.org'],
 ])->execute();
 
 // CreativeWorks
-$db->insert($creative_works)->values([
+$dm->insert($creative_works)->values([
     ['type' => 'article', 'name' => 'Introduction to Machine Learning', 'description' => 'A comprehensive guide...', 'date_published' => '2024-01-15 10:00:00'],
     ['type' => 'article', 'name' => 'Advanced PHP Patterns', 'description' => 'Design patterns in PHP...', 'date_published' => '2024-02-20 14:00:00'],
     ['type' => 'book', 'name' => 'The Complete Guide to APIs', 'description' => 'Everything about APIs...', 'date_published' => '2024-03-01 09:00:00'],
@@ -205,7 +205,7 @@ $db->insert($creative_works)->values([
 ])->execute();
 
 // Contributors (multiple authors/creators per work)
-$db->insert($creative_work_contributors)->values([
+$dm->insert($creative_work_contributors)->values([
     // Article 1: Two person authors + one organization creator
     ['work_id' => 1, 'contributor_type' => 'person', 'contributor_id' => 1, 'role' => 'author', 'position' => 1],
     ['work_id' => 1, 'contributor_type' => 'person', 'contributor_id' => 2, 'role' => 'author', 'position' => 2],
@@ -237,7 +237,7 @@ echo "=== Schema.org Multi-Author Relations Example ===\n\n";
 // Example 1: Get a work with all its contributors
 // ----------------------------------------
 echo "1. CreativeWork with all contributors:\n";
-$work = $db->query_table($creative_works)
+$work = $dm->query_table($creative_works)
     ->with([
         'contributor_records' => [
             'with' => ['contributor' => true],
@@ -274,7 +274,7 @@ echo "\n";
 // Example 2: Get all works by a specific person
 // ----------------------------------------
 echo "2. All works by John Doe:\n";
-$person = $db->query_table($persons)
+$person = $dm->query_table($persons)
     ->with([
         'contributions' => [
             'with' => ['work' => true]
@@ -293,7 +293,7 @@ echo "\n";
 // Example 3: Get all works by an organization
 // ----------------------------------------
 echo "3. All works by TechCorp:\n";
-$org = $db->query_table($organizations)
+$org = $dm->query_table($organizations)
     ->with([
         'contributions' => [
             'with' => ['work' => true]
@@ -312,7 +312,7 @@ echo "\n";
 // Example 4: Filter by role - Get only authors
 // ----------------------------------------
 echo "4. All authors of 'The Complete Guide to APIs':\n";
-$work_authors = $db->query_table($creative_works)
+$work_authors = $dm->query_table($creative_works)
     ->with([
         'contributor_records' => [
             'with' => ['contributor' => true],
@@ -336,7 +336,7 @@ echo "\n";
 // Example 5: Efficient batch loading for lists
 // ----------------------------------------
 echo "5. All works with authors (batch loaded):\n";
-$all_works = $db->query_table($creative_works)
+$all_works = $dm->query_table($creative_works)
     ->with([
         'contributor_records' => [
             'with' => ['contributor' => true],
@@ -398,7 +398,7 @@ function format_authors(array $work): string {
 }
 
 // Use the helpers
-$work = $db->query_table($creative_works)
+$work = $dm->query_table($creative_works)
     ->with([
         'contributor_records' => [
             'with' => ['contributor' => true],

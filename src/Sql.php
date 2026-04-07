@@ -24,11 +24,11 @@ use PDO;
  * while maintaining protection against SQL injection.
  * 
  * Usage:
- *   $db->sql('SELECT * FROM users WHERE id = ?', [$userId])->execute();
- *   $db->sql('SELECT * FROM users WHERE status = ? AND age > ?', ['active', 18])->all();
+ *   $dm->sql('SELECT * FROM users WHERE id = ?', [$userId])->execute();
+ *   $dm->sql('SELECT * FROM users WHERE status = ? AND age > ?', ['active', 18])->all();
  *   
  *   // Or using the fluent builder:
- *   $db->sql()
+ *   $dm->sql()
  *      ->append('SELECT * FROM ')
  *      ->identifier('users')
  *      ->append(' WHERE ')

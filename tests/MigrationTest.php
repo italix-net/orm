@@ -53,8 +53,8 @@ mkdir($test_dir, 0755, true);
 mkdir($migrations_dir, 0755, true);
 
 // Connect to SQLite
-$db = sqlite(['database' => $db_file]);
-Schema::set_connection($db);
+$dm = sqlite(['database' => $db_file]);
+Schema::set_connection($dm);
 
 // ============================================
 // Test 1: Migrator Creation
@@ -62,11 +62,11 @@ Schema::set_connection($db);
 
 echo "\n--- Migrator Tests ---\n";
 
-$migrator = new Migrator($db, $migrations_dir);
+$migrator = new Migrator($dm, $migrations_dir);
 $migrator->set_output(false);
 
 test('Migrator created', $migrator instanceof Migrator);
-test('Migrations table created', $db->table_exists('ix_migrations'));
+test('Migrations table created', $dm->table_exists('ix_migrations'));
 
 // ============================================
 // Test 2: Create Migration File
@@ -121,7 +121,7 @@ file_put_contents($filepath, $migration_content);
 // Run migrations
 $applied = $migrator->migrate();
 test('Migration applied', count($applied) === 1);
-test('Users table created', $db->table_exists('users'));
+test('Users table created', $dm->table_exists('users'));
 
 // Check migrations table
 $migrations = $migrator->get_applied_migrations();
@@ -178,7 +178,7 @@ file_put_contents($filepath2, $migration2_content);
 
 $applied = $migrator->migrate();
 test('Second migration applied', count($applied) === 1);
-test('Posts table created', $db->table_exists('posts'));
+test('Posts table created', $dm->table_exists('posts'));
 
 // ============================================
 // Test 6: Rollback
@@ -188,13 +188,13 @@ echo "\n--- Rollback Tests ---\n";
 
 $rolled_back = $migrator->rollback();
 test('Rollback successful', count($rolled_back) === 1);
-test('Posts table dropped', !$db->table_exists('posts'));
-test('Users table still exists', $db->table_exists('users'));
+test('Posts table dropped', !$dm->table_exists('posts'));
+test('Users table still exists', $dm->table_exists('users'));
 
 // Rollback again
 $rolled_back = $migrator->rollback();
 test('Second rollback successful', count($rolled_back) === 1);
-test('Users table dropped', !$db->table_exists('users'));
+test('Users table dropped', !$dm->table_exists('users'));
 
 // ============================================
 // Test 7: Refresh
@@ -204,8 +204,8 @@ echo "\n--- Refresh Tests ---\n";
 
 $applied = $migrator->refresh();
 test('Refresh applied both migrations', count($applied) === 2);
-test('Users table exists after refresh', $db->table_exists('users'));
-test('Posts table exists after refresh', $db->table_exists('posts'));
+test('Users table exists after refresh', $dm->table_exists('users'));
+test('Posts table exists after refresh', $dm->table_exists('posts'));
 
 // ============================================
 // Test 8: Schema Introspector (Pull)
@@ -213,7 +213,7 @@ test('Posts table exists after refresh', $db->table_exists('posts'));
 
 echo "\n--- Pull/Introspection Tests ---\n";
 
-$introspector = new SchemaIntrospector($db);
+$introspector = new SchemaIntrospector($dm);
 
 $tables = $introspector->get_tables();
 test('Introspector finds tables', count($tables) >= 2);
@@ -260,7 +260,7 @@ echo "\n--- Diff/Auto-suggest Tests ---\n";
 // Create a schema definition that differs from database
 // For this test, we'll use a simple diff check
 
-$differ = new SchemaDiffer($db);
+$differ = new SchemaDiffer($dm);
 test('Differ created', $differ instanceof SchemaDiffer);
 
 // ============================================
@@ -271,7 +271,7 @@ echo "\n--- Reset Tests ---\n";
 
 $rolled_back = $migrator->reset();
 test('Reset rolled back all', count($rolled_back) === 2);
-test('All tables dropped', !$db->table_exists('users') && !$db->table_exists('posts'));
+test('All tables dropped', !$dm->table_exists('users') && !$dm->table_exists('posts'));
 
 // ============================================
 // Test 12: Pending Migrations

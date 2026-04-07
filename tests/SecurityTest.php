@@ -47,7 +47,7 @@ function test($name, $condition, $details = '') {
 }
 
 // Create database
-$db = sqlite_memory();
+$dm = sqlite_memory();
 
 // ============================================
 // SECTION 1: SQL Injection Prevention Tests
@@ -89,18 +89,18 @@ $users = sqlite_table('test_users', [
     'email' => varchar(255),
     'status' => varchar(20)->default('active'),
 ]);
-$db->create_tables($users);
+$dm->create_tables($users);
 
 // Test 4: SQL injection via value in INSERT
 $malicious_value = "'; DROP TABLE test_users; --";
 try {
-    $db->insert($users)->values([
+    $dm->insert($users)->values([
         'name' => $malicious_value,
         'email' => 'test@test.com'
     ])->execute();
     
     // Table should still exist
-    $count = $db->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
+    $count = $dm->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
     test(
         'INSERT value injection prevented',
         $count !== null && $count['cnt'] >= 1,
@@ -113,7 +113,7 @@ try {
 // Test 5: SQL injection via WHERE condition value
 $malicious_where = "1 OR 1=1; --";
 try {
-    $result = $db->select()
+    $result = $dm->select()
         ->from($users)
         ->where(eq($users->name, $malicious_where))
         ->execute();
@@ -129,13 +129,13 @@ try {
 // Test 6: SQL injection via LIKE pattern
 $malicious_like = "%'; DELETE FROM test_users; --";
 try {
-    $result = $db->select()
+    $result = $dm->select()
         ->from($users)
         ->where(like($users->name, $malicious_like))
         ->execute();
     
     // Table should still have data
-    $count = $db->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
+    $count = $dm->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
     test(
         'LIKE pattern injection prevented',
         $count['cnt'] >= 1,
@@ -148,12 +148,12 @@ try {
 // Test 7: SQL injection via IN array values
 $malicious_in = ["admin", "'); DROP TABLE test_users; --"];
 try {
-    $result = $db->select()
+    $result = $dm->select()
         ->from($users)
         ->where(in_array($users->name, $malicious_in))
         ->execute();
     
-    $count = $db->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
+    $count = $dm->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
     test(
         'IN array injection prevented',
         $count['cnt'] >= 1,
@@ -165,7 +165,7 @@ try {
 
 // Test 8: SQL injection via sql() builder with identifier
 $malicious_identifier = 'users"; DROP TABLE test_users; --';
-$sql_obj = $db->sql()
+$sql_obj = $dm->sql()
     ->append('SELECT * FROM ')
     ->identifier($malicious_identifier);
 $query_str = $sql_obj->get_query();
@@ -177,12 +177,12 @@ test(
 
 // Test 9: SQL injection via sql() with parameterized value
 try {
-    $result = $db->sql(
+    $result = $dm->sql(
         'SELECT * FROM test_users WHERE name = ?',
         [$malicious_value]
     )->all();
     
-    $count = $db->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
+    $count = $dm->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
     test(
         'sql() parameterized value injection prevented',
         $count['cnt'] >= 1,
@@ -194,12 +194,12 @@ try {
 
 // Test 10: SQL injection via UPDATE
 try {
-    $db->update($users)
+    $dm->update($users)
         ->set(['status' => "'; DROP TABLE test_users; --"])
         ->where(eq($users->id, 1))
         ->execute();
     
-    $count = $db->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
+    $count = $dm->sql('SELECT COUNT(*) as cnt FROM test_users')->one();
     test(
         'UPDATE value injection prevented',
         $count['cnt'] >= 1,
@@ -216,11 +216,11 @@ try {
 echo "\n--- Query Accuracy Tests ---\n";
 
 // Drop and recreate table to reset IDs
-$db->drop_tables($users);
-$db->create_tables($users);
+$dm->drop_tables($users);
+$dm->create_tables($users);
 
 // Repopulate test data with fresh IDs starting from 1
-$db->insert($users)->values([
+$dm->insert($users)->values([
     ['name' => 'Alice', 'email' => 'alice@test.com', 'status' => 'active'],
     ['name' => 'Bob', 'email' => 'bob@test.com', 'status' => 'active'],
     ['name' => 'Charlie', 'email' => 'charlie@test.com', 'status' => 'inactive'],
@@ -228,7 +228,7 @@ $db->insert($users)->values([
 ])->execute();
 
 // Test 11: eq() accuracy
-$result = $db->select()->from($users)->where(eq($users->name, 'Alice'))->execute();
+$result = $dm->select()->from($users)->where(eq($users->name, 'Alice'))->execute();
 test(
     'eq() returns exact match',
     count($result) === 1 && $result[0]['name'] === 'Alice',
@@ -236,7 +236,7 @@ test(
 );
 
 // Test 12: ne() accuracy
-$result = $db->select()->from($users)->where(ne($users->name, 'Alice'))->execute();
+$result = $dm->select()->from($users)->where(ne($users->name, 'Alice'))->execute();
 test(
     'ne() excludes exact match',
     count($result) === 3 && !\in_array('Alice', array_column($result, 'name')),
@@ -244,7 +244,7 @@ test(
 );
 
 // Test 13: gt() accuracy
-$result = $db->select()->from($users)->where(gt($users->id, 2))->execute();
+$result = $dm->select()->from($users)->where(gt($users->id, 2))->execute();
 test(
     'gt() returns correct results',
     count($result) === 2,
@@ -252,7 +252,7 @@ test(
 );
 
 // Test 14: gte() accuracy
-$result = $db->select()->from($users)->where(gte($users->id, 2))->execute();
+$result = $dm->select()->from($users)->where(gte($users->id, 2))->execute();
 test(
     'gte() returns correct results',
     count($result) === 3,
@@ -260,7 +260,7 @@ test(
 );
 
 // Test 15: lt() accuracy
-$result = $db->select()->from($users)->where(lt($users->id, 3))->execute();
+$result = $dm->select()->from($users)->where(lt($users->id, 3))->execute();
 test(
     'lt() returns correct results',
     count($result) === 2,
@@ -268,7 +268,7 @@ test(
 );
 
 // Test 16: lte() accuracy
-$result = $db->select()->from($users)->where(lte($users->id, 3))->execute();
+$result = $dm->select()->from($users)->where(lte($users->id, 3))->execute();
 test(
     'lte() returns correct results',
     count($result) === 3,
@@ -276,7 +276,7 @@ test(
 );
 
 // Test 17: and_() accuracy
-$result = $db->select()->from($users)->where(
+$result = $dm->select()->from($users)->where(
     and_(
         eq($users->status, 'active'),
         gt($users->id, 1)
@@ -289,7 +289,7 @@ test(
 );
 
 // Test 18: or_() accuracy
-$result = $db->select()->from($users)->where(
+$result = $dm->select()->from($users)->where(
     or_(
         eq($users->name, 'Alice'),
         eq($users->name, 'Bob')
@@ -302,7 +302,7 @@ test(
 );
 
 // Test 19: not_() accuracy
-$result = $db->select()->from($users)->where(
+$result = $dm->select()->from($users)->where(
     not_(eq($users->status, 'active'))
 )->execute();
 test(
@@ -312,7 +312,7 @@ test(
 );
 
 // Test 20: like() accuracy
-$result = $db->select()->from($users)->where(like($users->name, 'A%'))->execute();
+$result = $dm->select()->from($users)->where(like($users->name, 'A%'))->execute();
 test(
     'like() matches pattern correctly',
     count($result) === 1 && $result[0]['name'] === 'Alice',
@@ -320,7 +320,7 @@ test(
 );
 
 // Test 21: not_like() accuracy
-$result = $db->select()->from($users)->where(not_like($users->name, 'A%'))->execute();
+$result = $dm->select()->from($users)->where(not_like($users->name, 'A%'))->execute();
 test(
     'not_like() excludes pattern correctly',
     count($result) === 3,
@@ -328,7 +328,7 @@ test(
 );
 
 // Test 22: in_array() accuracy
-$result = $db->select()->from($users)->where(
+$result = $dm->select()->from($users)->where(
     in_array($users->name, ['Alice', 'Bob', 'Eve'])
 )->execute();
 test(
@@ -338,7 +338,7 @@ test(
 );
 
 // Test 23: not_in_array() accuracy
-$result = $db->select()->from($users)->where(
+$result = $dm->select()->from($users)->where(
     not_in_array($users->name, ['Alice', 'Bob'])
 )->execute();
 test(
@@ -348,7 +348,7 @@ test(
 );
 
 // Test 24: between() accuracy
-$result = $db->select()->from($users)->where(between($users->id, 2, 3))->execute();
+$result = $dm->select()->from($users)->where(between($users->id, 2, 3))->execute();
 test(
     'between() includes range correctly',
     count($result) === 2,
@@ -356,7 +356,7 @@ test(
 );
 
 // Test 25: not_between() accuracy
-$result = $db->select()->from($users)->where(not_between($users->id, 2, 3))->execute();
+$result = $dm->select()->from($users)->where(not_between($users->id, 2, 3))->execute();
 test(
     'not_between() excludes range correctly',
     count($result) === 2,
@@ -364,7 +364,7 @@ test(
 );
 
 // Test 26: ORDER BY accuracy
-$result = $db->select()->from($users)->order_by(desc($users->id))->execute();
+$result = $dm->select()->from($users)->order_by(desc($users->id))->execute();
 test(
     'ORDER BY DESC works correctly',
     $result[0]['id'] > $result[count($result)-1]['id'],
@@ -372,7 +372,7 @@ test(
 );
 
 // Test 27: LIMIT accuracy
-$result = $db->select()->from($users)->limit(2)->execute();
+$result = $dm->select()->from($users)->limit(2)->execute();
 test(
     'LIMIT works correctly',
     count($result) === 2,
@@ -380,7 +380,7 @@ test(
 );
 
 // Test 28: OFFSET accuracy
-$result = $db->select()->from($users)->order_by(asc($users->id))->limit(2)->offset(1)->execute();
+$result = $dm->select()->from($users)->order_by(asc($users->id))->limit(2)->offset(1)->execute();
 test(
     'OFFSET works correctly',
     count($result) === 2 && $result[0]['id'] == 2,
@@ -388,7 +388,7 @@ test(
 );
 
 // Test 29: SELECT specific columns
-$result = $db->select([$users->name, $users->email])->from($users)->limit(1)->execute();
+$result = $dm->select([$users->name, $users->email])->from($users)->limit(1)->execute();
 test(
     'SELECT specific columns works correctly',
     isset($result[0]['name']) && isset($result[0]['email']) && !isset($result[0]['status']),
@@ -396,7 +396,7 @@ test(
 );
 
 // Test 30: Aggregate functions
-$result = $db->select([sql_count()->as('total')])->from($users)->execute();
+$result = $dm->select([sql_count()->as('total')])->from($users)->execute();
 test(
     'COUNT(*) works correctly',
     $result[0]['total'] == 4,
@@ -410,7 +410,7 @@ test(
 echo "\n--- Complex Query Tests ---\n";
 
 // Test 31: Complex WHERE with mixed operators
-$result = $db->select()->from($users)->where(
+$result = $dm->select()->from($users)->where(
     and_(
         eq($users->status, 'active'),
         or_(
@@ -426,11 +426,11 @@ test(
 );
 
 // Test 32: UPDATE with WHERE
-$db->update($users)
+$dm->update($users)
     ->set(['status' => 'premium'])
     ->where(eq($users->name, 'Alice'))
     ->execute();
-$result = $db->select()->from($users)->where(eq($users->name, 'Alice'))->execute();
+$result = $dm->select()->from($users)->where(eq($users->name, 'Alice'))->execute();
 test(
     'UPDATE with WHERE works correctly',
     $result[0]['status'] === 'premium',
@@ -438,9 +438,9 @@ test(
 );
 
 // Test 33: DELETE with WHERE
-$db->insert($users)->values(['name' => 'ToDelete', 'email' => 'delete@test.com'])->execute();
-$db->delete($users)->where(eq($users->name, 'ToDelete'))->execute();
-$result = $db->select()->from($users)->where(eq($users->name, 'ToDelete'))->execute();
+$dm->insert($users)->values(['name' => 'ToDelete', 'email' => 'delete@test.com'])->execute();
+$dm->delete($users)->where(eq($users->name, 'ToDelete'))->execute();
+$result = $dm->select()->from($users)->where(eq($users->name, 'ToDelete'))->execute();
 test(
     'DELETE with WHERE works correctly',
     count($result) === 0,
@@ -448,11 +448,11 @@ test(
 );
 
 // Test 34: Transaction commit
-$result = $db->transaction(function($db) use ($users) {
-    $db->insert($users)->values(['name' => 'TxUser', 'email' => 'tx@test.com'])->execute();
+$result = $dm->transaction(function($dm) use ($users) {
+    $dm->insert($users)->values(['name' => 'TxUser', 'email' => 'tx@test.com'])->execute();
     return 'committed';
 });
-$found = $db->select()->from($users)->where(eq($users->name, 'TxUser'))->execute();
+$found = $dm->select()->from($users)->where(eq($users->name, 'TxUser'))->execute();
 test(
     'Transaction COMMIT works correctly',
     count($found) === 1,

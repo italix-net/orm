@@ -24,7 +24,7 @@ require_once __DIR__ . '/../../../src/ActiveRow/functions.php';
 require_once __DIR__ . '/PrestaShopClient.php';
 
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Examples\Ecommerce\Schema;
 use Examples\Ecommerce\Models\Thing;
 use Examples\Ecommerce\Models\Product;
@@ -53,7 +53,7 @@ spl_autoload_register(function ($class) {
 class ImportOrders
 {
     private PrestaShopClient $client;
-    private IxOrm $db;
+    private DataManager $dm;
     private Schema $schema;
     private array $config;
     private array $productCache = [];
@@ -119,25 +119,25 @@ class ImportOrders
                 break;
         }
 
-        $this->db = new IxOrm($driver);
+        $this->dm = new DataManager($driver);
         $this->schema = new Schema();
 
         // Create tables if they don't exist
-        $this->db->create_tables(...$this->schema->get_tables());
+        $this->dm->create_tables(...$this->schema->get_tables());
 
         // Set up persistence for Thing hierarchy
-        Thing::set_persistence($this->db, $this->schema->things);
-        Product::set_persistence($this->db, $this->schema->products);
-        Order::set_persistence($this->db, $this->schema->orders);
-        OrderItem::set_persistence($this->db, $this->schema->order_items);
+        Thing::set_persistence($this->dm, $this->schema->things);
+        Product::set_persistence($this->dm, $this->schema->products);
+        Order::set_persistence($this->dm, $this->schema->orders);
+        OrderItem::set_persistence($this->dm, $this->schema->order_items);
 
         // Set up persistence for Customer hierarchy
-        Customer::set_persistence($this->db, $this->schema->customers);
-        Person::set_persistence($this->db, $this->schema->persons);
-        Organization::set_persistence($this->db, $this->schema->organizations);
+        Customer::set_persistence($this->dm, $this->schema->customers);
+        Person::set_persistence($this->dm, $this->schema->persons);
+        Organization::set_persistence($this->dm, $this->schema->organizations);
 
         // Set up persistence for PostalAddress
-        PostalAddress::set_persistence($this->db, $this->schema->postal_addresses);
+        PostalAddress::set_persistence($this->dm, $this->schema->postal_addresses);
     }
 
     /**

@@ -17,7 +17,7 @@ use Italix\Orm\ActiveRow\ActiveRow;
 use Italix\Orm\ActiveRow\Traits\Persistable;
 use Italix\Orm\ActiveRow\Traits\DelegatedTypes;
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 use function Italix\Orm\Schema\bigint;
 use function Italix\Orm\Schema\varchar;
@@ -207,13 +207,13 @@ function section(string $title): void
 // ============================================================
 
 $driver = Driver::sqlite_memory();
-$db = new IxOrm($driver);
-$db->create_tables($things, $books, $textbooks, $audiobooks);
+$dm = new DataManager($driver);
+$dm->create_tables($things, $books, $textbooks, $audiobooks);
 
-NThing::set_persistence($db, $things);
-NBook::set_persistence($db, $books);
-NTextBook::set_persistence($db, $textbooks);
-NAudioBook::set_persistence($db, $audiobooks);
+NThing::set_persistence($dm, $things);
+NBook::set_persistence($dm, $books);
+NTextBook::set_persistence($dm, $textbooks);
+NAudioBook::set_persistence($dm, $audiobooks);
 
 echo "N-Level Delegated Types Test Suite\n";
 echo str_repeat('=', 50) . "\n";

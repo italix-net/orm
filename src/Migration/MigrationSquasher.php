@@ -12,21 +12,21 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Migration;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 /**
  * Squashes multiple migrations into a single migration file.
  */
 class MigrationSquasher
 {
-    protected IxOrm $db;
+    protected DataManager $dm;
     protected SchemaIntrospector $introspector;
     protected string $migrations_path;
 
-    public function __construct(IxOrm $db, string $migrations_path)
+    public function __construct(DataManager $dm, string $migrations_path)
     {
-        $this->db = $db;
-        $this->introspector = new SchemaIntrospector($db);
+        $this->dm = $dm;
+        $this->introspector = new SchemaIntrospector($dm);
         $this->migrations_path = rtrim($migrations_path, '/');
     }
 

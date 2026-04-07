@@ -11,7 +11,7 @@ declare(strict_types=1);
 namespace Italix\Orm\Console\Commands;
 
 use Italix\Orm\Console\Application;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Italix\Orm\Migration\Migrator;
 use Italix\Orm\Migration\Schema;
 
@@ -21,7 +21,7 @@ use Italix\Orm\Migration\Schema;
 abstract class Command
 {
     protected Application $app;
-    protected ?IxOrm $db = null;
+    protected ?DataManager $dm = null;
     protected ?Migrator $migrator = null;
     protected array $options = [];
     protected array $arguments = [];
@@ -110,18 +110,18 @@ abstract class Command
     /**
      * Get database connection
      */
-    protected function get_database(): IxOrm
+    protected function get_database(): DataManager
     {
-        if ($this->db !== null) {
-            return $this->db;
+        if ($this->dm !== null) {
+            return $this->dm;
         }
         
         $config = $this->app->get_all_config();
         
         // Check for connection string
         if (isset($config['database_url'])) {
-            $this->db = $this->connect_from_url($config['database_url']);
-            return $this->db;
+            $this->dm = $this->connect_from_url($config['database_url']);
+            return $this->dm;
         }
         
         // Check for connection config
@@ -135,7 +135,7 @@ abstract class Command
         $db_config = $config['database'];
         $dialect = $db_config['dialect'] ?? $db_config['driver'] ?? 'mysql';
         
-        $this->db = match ($dialect) {
+        $this->dm = match ($dialect) {
             'mysql' => \Italix\Orm\mysql($db_config),
             'postgresql', 'postgres', 'pgsql' => \Italix\Orm\postgresql($db_config),
             'sqlite' => \Italix\Orm\sqlite($db_config),
@@ -143,13 +143,13 @@ abstract class Command
             default => throw new \RuntimeException("Unknown dialect: {$dialect}"),
         };
         
-        return $this->db;
+        return $this->dm;
     }
 
     /**
      * Connect from database URL
      */
-    protected function connect_from_url(string $url): IxOrm
+    protected function connect_from_url(string $url): DataManager
     {
         $parsed = parse_url($url);
         $scheme = $parsed['scheme'] ?? 'mysql';
@@ -179,10 +179,10 @@ abstract class Command
             return $this->migrator;
         }
         
-        $db = $this->get_database();
+        $dm = $this->get_database();
         $path = $this->get_migrations_path();
         
-        $this->migrator = new Migrator($db, $path);
+        $this->migrator = new Migrator($dm, $path);
         
         // Configure migrations table if specified
         $table = $this->app->get_config('migrations_table');

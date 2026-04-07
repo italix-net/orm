@@ -17,12 +17,12 @@ echo "  Italix ORM - SQL Builder Test\n";
 echo "===========================================\n\n";
 
 // Create database
-$db = sqlite_memory();
+$dm = sqlite_memory();
 echo "✓ Database connection established\n\n";
 
 // Create table using raw SQL via sql()
 echo "--- Creating table with sql() ---\n";
-$db->sql('
+$dm->sql('
     CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name VARCHAR(100) NOT NULL,
@@ -40,14 +40,14 @@ echo "✓ Table created with raw SQL\n\n";
 echo "--- INSERT with sql() ---\n";
 
 // Simple parameterized insert
-$db->sql(
+$dm->sql(
     'INSERT INTO users (name, email, age, salary) VALUES (?, ?, ?, ?)',
     ['Alice', 'alice@test.com', 25, 50000.00]
 )->execute();
 echo "✓ Inserted Alice with parameterized query\n";
 
 // Fluent builder insert
-$db->sql()
+$dm->sql()
     ->append('INSERT INTO ')
     ->identifier('users')
     ->append(' (')
@@ -71,7 +71,7 @@ $db->sql()
 echo "✓ Inserted Bob with fluent builder\n";
 
 // Using values() for multiple placeholders
-$db->sql()
+$dm->sql()
     ->append('INSERT INTO users (name, email, age, salary) VALUES (')
     ->values(['Charlie', 'charlie@test.com', 35, 70000.00])
     ->append(')')
@@ -85,22 +85,22 @@ echo "✓ Inserted Charlie with values() helper\n\n";
 echo "--- SELECT with sql() ---\n";
 
 // Simple select all
-$users = $db->sql('SELECT * FROM users')->all();
+$users = $dm->sql('SELECT * FROM users')->all();
 echo "✓ SELECT *: Found " . count($users) . " users\n";
 
 // Select with parameter
-$user = $db->sql('SELECT * FROM users WHERE id = ?', [1])->one();
+$user = $dm->sql('SELECT * FROM users WHERE id = ?', [1])->one();
 echo "✓ SELECT by id: Found {$user['name']}\n";
 
 // Select with multiple parameters
-$users = $db->sql(
+$users = $dm->sql(
     'SELECT * FROM users WHERE age >= ? AND salary <= ?',
     [25, 65000]
 )->all();
 echo "✓ SELECT with multiple params: Found " . count($users) . " users\n";
 
 // Fluent select
-$users = $db->sql()
+$users = $dm->sql()
     ->append('SELECT ')
     ->identifier('name')
     ->append(', ')
@@ -115,14 +115,14 @@ $users = $db->sql()
 echo "✓ Fluent SELECT: Found " . count($users) . " users over 25\n";
 
 // Using IN clause
-$users = $db->sql()
+$users = $dm->sql()
     ->append('SELECT * FROM users WHERE name ')
     ->in(['Alice', 'Bob'])
     ->all();
 echo "✓ SELECT with IN: Found " . count($users) . " users (Alice, Bob)\n";
 
 // Scalar value
-$count = $db->sql('SELECT COUNT(*) FROM users')->scalar();
+$count = $dm->sql('SELECT COUNT(*) FROM users')->scalar();
 echo "✓ Scalar value (COUNT): {$count}\n\n";
 
 // ============================================
@@ -131,14 +131,14 @@ echo "✓ Scalar value (COUNT): {$count}\n\n";
 
 echo "--- UPDATE with sql() ---\n";
 
-$affected = $db->sql(
+$affected = $dm->sql(
     'UPDATE users SET salary = ? WHERE name = ?',
     [55000.00, 'Alice']
 )->row_count();
 echo "✓ UPDATE Alice's salary: {$affected} row(s) affected\n";
 
 // Verify update
-$alice = $db->sql('SELECT salary FROM users WHERE name = ?', ['Alice'])->one();
+$alice = $dm->sql('SELECT salary FROM users WHERE name = ?', ['Alice'])->one();
 echo "✓ Verified: Alice's salary is now {$alice['salary']}\n\n";
 
 // ============================================
@@ -148,12 +148,12 @@ echo "✓ Verified: Alice's salary is now {$alice['salary']}\n\n";
 echo "--- DELETE with sql() ---\n";
 
 // First add someone to delete
-$db->sql(
+$dm->sql(
     'INSERT INTO users (name, email, age, salary) VALUES (?, ?, ?, ?)',
     ['ToDelete', 'delete@test.com', 99, 1000]
 )->execute();
 
-$affected = $db->sql('DELETE FROM users WHERE name = ?', ['ToDelete'])->row_count();
+$affected = $dm->sql('DELETE FROM users WHERE name = ?', ['ToDelete'])->row_count();
 echo "✓ DELETE: {$affected} row(s) deleted\n\n";
 
 // ============================================
@@ -165,7 +165,7 @@ echo "--- Conditional SQL with when() ---\n";
 $minAge = 30;
 $maxSalary = null; // Not set
 
-$query = $db->sql()
+$query = $dm->sql()
     ->append('SELECT * FROM users WHERE 1=1')
     ->when($minAge !== null, ' AND age >= ?', [$minAge])
     ->when($maxSalary !== null, ' AND salary <= ?', [$maxSalary]);
@@ -185,7 +185,7 @@ $fromPart = sql(' FROM users');
 $wherePart = sql(' WHERE salary > ?', [50000]);
 $orderPart = sql(' ORDER BY salary DESC');
 
-$complexQuery = $db->sql()
+$complexQuery = $dm->sql()
     ->merge($selectPart)
     ->merge($fromPart)
     ->merge($wherePart)
@@ -246,7 +246,7 @@ $paramSql = sql('SELECT * FROM users WHERE id = ')
 echo "Sql::param(): " . $paramSql->get_query() . " with params " . json_encode($paramSql->get_params()) . "\n\n";
 
 // Final count
-$count = $db->sql('SELECT COUNT(*) as total FROM users')->one();
+$count = $dm->sql('SELECT COUNT(*) as total FROM users')->one();
 echo "✓ Final user count: {$count['total']}\n\n";
 
 echo "===========================================\n";

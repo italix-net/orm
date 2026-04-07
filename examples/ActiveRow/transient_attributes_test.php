@@ -17,7 +17,7 @@ use Italix\Orm\Schema\Table;
 use Italix\Orm\ActiveRow\ActiveRow;
 use Italix\Orm\ActiveRow\Traits\Persistable;
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 use function Italix\Orm\Schema\bigint;
 use function Italix\Orm\Schema\varchar;
@@ -79,10 +79,10 @@ function section(string $title): void
 // ============================================================
 
 $driver = Driver::sqlite_memory();
-$db = new IxOrm($driver);
-$db->create_tables($users);
+$dm = new DataManager($driver);
+$dm->create_tables($users);
 
-TestUser::set_persistence($db, $users);
+TestUser::set_persistence($dm, $users);
 
 echo "Transient Attributes Test Suite\n";
 echo str_repeat('=', 50) . "\n";

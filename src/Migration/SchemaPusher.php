@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Migration;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Italix\Orm\Schema\Table;
 
 /**
@@ -21,20 +21,20 @@ use Italix\Orm\Schema\Table;
  */
 class SchemaPusher
 {
-    protected IxOrm $db;
+    protected DataManager $dm;
     protected SchemaDiffer $differ;
     protected SchemaIntrospector $introspector;
     protected string $dialect;
     protected bool $output_enabled = true;
 
-    public function __construct(IxOrm $db)
+    public function __construct(DataManager $dm)
     {
-        $this->db = $db;
-        $this->differ = new SchemaDiffer($db);
+        $this->dm = $dm;
+        $this->differ = new SchemaDiffer($dm);
         $this->introspector = $this->differ->get_introspector();
-        $this->dialect = $db->get_driver()->get_dialect_name();
+        $this->dialect = $dm->get_driver()->get_dialect_name();
         
-        Schema::set_connection($db);
+        Schema::set_connection($dm);
     }
 
     /**
@@ -148,7 +148,7 @@ class SchemaPusher
     protected function create_table(Table $table): void
     {
         $sql = $table->to_create_sql();
-        $this->db->execute($sql);
+        $this->dm->execute($sql);
     }
 
     /**
@@ -163,7 +163,7 @@ class SchemaPusher
         foreach ($changes['add_columns'] as $col) {
             $col_def = $this->build_column_definition($col);
             $sql = "ALTER TABLE {$table_quoted} ADD COLUMN {$col_def}";
-            $this->db->execute($sql);
+            $this->dm->execute($sql);
             $applied[] = "Added column: {$col['name']}";
         }
         
@@ -172,7 +172,7 @@ class SchemaPusher
             if ($force) {
                 $col_quoted = $this->quote_identifier($col_name);
                 $sql = "ALTER TABLE {$table_quoted} DROP COLUMN {$col_quoted}";
-                $this->db->execute($sql);
+                $this->dm->execute($sql);
                 $applied[] = "Dropped column: {$col_name}";
             }
         }

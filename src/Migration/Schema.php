@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Migration;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 /**
  * Schema facade for database schema operations.
@@ -18,26 +18,26 @@ use Italix\Orm\IxOrm;
  */
 class Schema
 {
-    /** @var IxOrm|null Database connection */
-    protected static ?IxOrm $db = null;
+    /** @var DataManager|null Database connection */
+    protected static ?DataManager $dm = null;
 
     /**
      * Set the database connection
      */
-    public static function set_connection(IxOrm $db): void
+    public static function set_connection(DataManager $dm): void
     {
-        self::$db = $db;
+        self::$dm = $dm;
     }
 
     /**
      * Get the database connection
      */
-    public static function get_connection(): IxOrm
+    public static function get_connection(): DataManager
     {
-        if (self::$db === null) {
+        if (self::$dm === null) {
             throw new \RuntimeException('No database connection set for Schema');
         }
-        return self::$db;
+        return self::$dm;
     }
 
     /**
@@ -58,15 +58,15 @@ class Schema
         
         $callback($blueprint);
         
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         // Execute CREATE TABLE
         $sql = $blueprint->to_create_sql();
-        $db->execute($sql);
+        $dm->execute($sql);
         
         // Execute CREATE INDEX statements
         foreach ($blueprint->to_index_sql() as $index_sql) {
-            $db->execute($index_sql);
+            $dm->execute($index_sql);
         }
     }
 
@@ -90,11 +90,11 @@ class Schema
         
         $callback($blueprint);
         
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         // Execute ALTER TABLE statements
         foreach ($blueprint->to_alter_sql() as $sql) {
-            $db->execute($sql);
+            $dm->execute($sql);
         }
     }
 
@@ -189,17 +189,17 @@ class Schema
     public static function get_tables(): array
     {
         $dialect = self::get_dialect();
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         if ($dialect === 'sqlite') {
-            $result = $db->query(
+            $result = $dm->query(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             );
         } elseif ($dialect === 'mysql') {
-            $result = $db->query("SHOW TABLES");
+            $result = $dm->query("SHOW TABLES");
         } else {
             // PostgreSQL
-            $result = $db->query(
+            $result = $dm->query(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
             );
         }
@@ -213,10 +213,10 @@ class Schema
     public static function get_columns(string $table): array
     {
         $dialect = self::get_dialect();
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         if ($dialect === 'sqlite') {
-            $result = $db->query("PRAGMA table_info({$table})");
+            $result = $dm->query("PRAGMA table_info({$table})");
             return array_map(fn($row) => [
                 'name' => $row['name'],
                 'type' => $row['type'],
@@ -225,7 +225,7 @@ class Schema
                 'primary' => (bool)$row['pk'],
             ], $result);
         } elseif ($dialect === 'mysql') {
-            $result = $db->query("DESCRIBE {$table}");
+            $result = $dm->query("DESCRIBE {$table}");
             return array_map(fn($row) => [
                 'name' => $row['Field'],
                 'type' => $row['Type'],
@@ -235,7 +235,7 @@ class Schema
             ], $result);
         } else {
             // PostgreSQL
-            $result = $db->query("
+            $result = $dm->query("
                 SELECT column_name, data_type, is_nullable, column_default
                 FROM information_schema.columns
                 WHERE table_name = ?
@@ -257,16 +257,16 @@ class Schema
     public static function get_indexes(string $table): array
     {
         $dialect = self::get_dialect();
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         if ($dialect === 'sqlite') {
-            $result = $db->query("PRAGMA index_list({$table})");
+            $result = $dm->query("PRAGMA index_list({$table})");
             return array_map(fn($row) => [
                 'name' => $row['name'],
                 'unique' => (bool)$row['unique'],
             ], $result);
         } elseif ($dialect === 'mysql') {
-            $result = $db->query("SHOW INDEX FROM {$table}");
+            $result = $dm->query("SHOW INDEX FROM {$table}");
             $indexes = [];
             foreach ($result as $row) {
                 $name = $row['Key_name'];
@@ -282,7 +282,7 @@ class Schema
             return array_values($indexes);
         } else {
             // PostgreSQL
-            $result = $db->query("
+            $result = $dm->query("
                 SELECT indexname, indexdef
                 FROM pg_indexes
                 WHERE tablename = ?
@@ -300,10 +300,10 @@ class Schema
     public static function get_foreign_keys(string $table): array
     {
         $dialect = self::get_dialect();
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         if ($dialect === 'sqlite') {
-            $result = $db->query("PRAGMA foreign_key_list({$table})");
+            $result = $dm->query("PRAGMA foreign_key_list({$table})");
             return array_map(fn($row) => [
                 'column' => $row['from'],
                 'references_table' => $row['table'],
@@ -312,7 +312,7 @@ class Schema
                 'on_update' => $row['on_update'],
             ], $result);
         } elseif ($dialect === 'mysql') {
-            $result = $db->query("
+            $result = $dm->query("
                 SELECT 
                     CONSTRAINT_NAME,
                     COLUMN_NAME,
@@ -329,7 +329,7 @@ class Schema
             ], $result);
         } else {
             // PostgreSQL
-            $result = $db->query("
+            $result = $dm->query("
                 SELECT
                     tc.constraint_name,
                     kcu.column_name,
@@ -357,15 +357,15 @@ class Schema
     public static function disable_foreign_key_constraints(): void
     {
         $dialect = self::get_dialect();
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         if ($dialect === 'sqlite') {
-            $db->execute('PRAGMA foreign_keys = OFF');
+            $dm->execute('PRAGMA foreign_keys = OFF');
         } elseif ($dialect === 'mysql') {
-            $db->execute('SET FOREIGN_KEY_CHECKS = 0');
+            $dm->execute('SET FOREIGN_KEY_CHECKS = 0');
         } else {
             // PostgreSQL
-            $db->execute('SET CONSTRAINTS ALL DEFERRED');
+            $dm->execute('SET CONSTRAINTS ALL DEFERRED');
         }
     }
 
@@ -375,15 +375,15 @@ class Schema
     public static function enable_foreign_key_constraints(): void
     {
         $dialect = self::get_dialect();
-        $db = self::get_connection();
+        $dm = self::get_connection();
         
         if ($dialect === 'sqlite') {
-            $db->execute('PRAGMA foreign_keys = ON');
+            $dm->execute('PRAGMA foreign_keys = ON');
         } elseif ($dialect === 'mysql') {
-            $db->execute('SET FOREIGN_KEY_CHECKS = 1');
+            $dm->execute('SET FOREIGN_KEY_CHECKS = 1');
         } else {
             // PostgreSQL
-            $db->execute('SET CONSTRAINTS ALL IMMEDIATE');
+            $dm->execute('SET CONSTRAINTS ALL IMMEDIATE');
         }
     }
 

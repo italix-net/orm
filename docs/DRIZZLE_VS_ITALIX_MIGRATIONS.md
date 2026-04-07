@@ -194,7 +194,7 @@ $posts_relations = define_relations($posts, function($r) use ($users, $posts, $c
 
 ```php
 // Find users with their posts and comments
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with([
         'posts' => [
             'with' => ['comments' => true]  // Nested relations
@@ -222,7 +222,7 @@ $users = $db->query_table($users)
 ### 3.3 Filtered and Ordered Relations
 
 ```php
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with([
         'posts' => [
             'where' => eq($posts->published, true),
@@ -236,7 +236,7 @@ $users = $db->query_table($users)
 ### 3.4 Relation Aliases
 
 ```php
-$posts = $db->query_table($posts)
+$posts = $dm->query_table($posts)
     ->with([
         'writer:author' => true,  // Load 'author' relation as 'writer'
     ])
@@ -271,7 +271,7 @@ $posts_relations = define_relations($posts, function($r) use ($posts, $tags, $po
 });
 
 // Query
-$posts = $db->query_table($posts)
+$posts = $dm->query_table($posts)
     ->with(['tags' => true])
     ->find_many();
 ```
@@ -309,7 +309,7 @@ $comments_relations = define_relations($comments, function($r) use ($posts, $vid
 });
 
 // Query comments with their parent (regardless of type)
-$comments = $db->query_table($comments)
+$comments = $dm->query_table($comments)
     ->with(['commentable' => true])
     ->find_many();
 ```
@@ -331,7 +331,7 @@ $posts_relations = define_relations($posts, function($r) use ($posts, $comments)
 });
 
 // Query posts with their polymorphic comments
-$posts = $db->query_table($posts)
+$posts = $dm->query_table($posts)
     ->with(['comments' => true])
     ->find_many();
 ```
@@ -375,7 +375,7 @@ $contributors_relations = define_relations($contributors, function($r) use ($con
 });
 
 // Query with all contributors resolved
-$works = $db->query_table($creative_works)
+$works = $dm->query_table($creative_works)
     ->with([
         'contributor_records' => [
             'with' => ['contributor' => true],
@@ -394,7 +394,7 @@ $works = $db->query_table($creative_works)
 
 ```php
 // find_many() - Get multiple records
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->where(eq($users->is_active, true))
     ->order_by(desc($users->created_at))
     ->limit(10)
@@ -402,13 +402,13 @@ $users = $db->query_table($users)
     ->find_many();
 
 // find_first() / find_one() - Get single record
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->where(eq($users->email, 'john@example.com'))
     ->with(['profile' => true])
     ->find_first();
 
 // find() - Get by primary key
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->with(['posts' => true])
     ->find(1);
 ```
@@ -417,14 +417,14 @@ $user = $db->query_table($users)
 
 ```php
 // Shorthand for common patterns
-$users = $db->find_many($users, [
+$users = $dm->find_many($users, [
     'where' => eq($users->is_active, true),
     'with' => ['posts' => true],
     'order_by' => desc($users->id),
     'limit' => 20,
 ]);
 
-$user = $db->find_first($users, [
+$user = $dm->find_first($users, [
     'where' => eq($users->id, 1),
     'with' => ['profile' => true, 'posts' => true],
 ]);
@@ -445,10 +445,10 @@ All features work across all supported databases:
 
 ```php
 // Same code works on all databases
-$db = mysql(['host' => 'localhost', 'database' => 'myapp', ...]);
-$db = postgresql(['host' => 'localhost', 'database' => 'myapp', ...]);
-$db = sqlite('/path/to/db.sqlite');
-$db = supabase(['url' => '...', 'key' => '...']);
+$dm = mysql(['host' => 'localhost', 'database' => 'myapp', ...]);
+$dm = postgresql(['host' => 'localhost', 'database' => 'myapp', ...]);
+$dm = sqlite('/path/to/db.sqlite');
+$dm = supabase(['url' => '...', 'key' => '...']);
 ```
 
 ---

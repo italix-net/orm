@@ -29,10 +29,10 @@ class SquashCommand extends Command
 
     public function handle(): int
     {
-        $db = $this->get_database();
+        $dm = $this->get_database();
         $path = $this->get_migrations_path();
         
-        $squasher = new MigrationSquasher($db, $path);
+        $squasher = new MigrationSquasher($dm, $path);
         
         // Preview
         $up_to = $this->argument(0);

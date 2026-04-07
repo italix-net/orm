@@ -24,7 +24,7 @@ echo "===========================================\n\n";
 // ============================================
 
 echo "1. Creating SQLite in-memory database...\n";
-$db = sqlite_memory();
+$dm = sqlite_memory();
 echo "   ✓ Database connection established\n\n";
 
 // ============================================
@@ -49,7 +49,7 @@ echo "   ✓ Schema defined: users (id, name, email, age, is_active, created_at)
 // ============================================
 
 echo "3. Creating table...\n";
-$db->create_tables($users);
+$dm->create_tables($users);
 echo "   ✓ Table 'users' created\n\n";
 
 // ============================================
@@ -59,7 +59,7 @@ echo "   ✓ Table 'users' created\n\n";
 echo "4. Inserting records...\n";
 
 // Single insert
-$db->insert($users)->values([
+$dm->insert($users)->values([
     'name'       => 'Alice Johnson',
     'email'      => 'alice@example.com',
     'age'        => 28,
@@ -69,7 +69,7 @@ $db->insert($users)->values([
 echo "   ✓ Inserted: Alice Johnson\n";
 
 // Multiple inserts
-$db->insert($users)->values([
+$dm->insert($users)->values([
     [
         'name'       => 'Bob Smith',
         'email'      => 'bob@example.com',
@@ -99,7 +99,7 @@ echo "   ✓ Inserted: Bob, Charlie, Diana\n\n";
 // ============================================
 
 echo "5. Selecting all records...\n";
-$all_users = $db->select()->from($users)->execute();
+$all_users = $dm->select()->from($users)->execute();
 echo "   Found " . count($all_users) . " users:\n";
 foreach ($all_users as $user) {
     echo "   - [{$user['id']}] {$user['name']} ({$user['email']})\n";
@@ -111,7 +111,7 @@ echo "\n";
 // ============================================
 
 echo "6. Selecting active users over 25...\n";
-$filtered = $db->select()
+$filtered = $dm->select()
     ->from($users)
     ->where(and_(
         eq($users->is_active, 1),
@@ -129,7 +129,7 @@ echo "\n";
 // ============================================
 
 echo "7. Selecting top 2 users by age (descending)...\n";
-$top_users = $db->select()
+$top_users = $dm->select()
     ->from($users)
     ->order_by(desc($users->age))
     ->limit(2)
@@ -144,12 +144,12 @@ echo "\n";
 // ============================================
 
 echo "8. Updating Charlie's status to active...\n";
-$db->update($users)
+$dm->update($users)
     ->set(['is_active' => true, 'age' => 23])
     ->where(eq($users->name, 'Charlie Brown'))
     ->execute();
 
-$charlie = $db->select()
+$charlie = $dm->select()
     ->from($users)
     ->where(eq($users->name, 'Charlie Brown'))
     ->execute()[0];
@@ -160,8 +160,8 @@ echo "   ✓ Updated: {$charlie['name']} is now active (age: {$charlie['age']})\
 // ============================================
 
 echo "9. Transaction example...\n";
-$result = $db->transaction(function($db) use ($users) {
-    $db->insert($users)->values([
+$result = $dm->transaction(function($dm) use ($users) {
+    $dm->insert($users)->values([
         'name'       => 'Eve Wilson',
         'email'      => 'eve@example.com',
         'age'        => 27,
@@ -169,7 +169,7 @@ $result = $db->transaction(function($db) use ($users) {
         'created_at' => date('Y-m-d H:i:s'),
     ])->execute();
     
-    return $db->last_insert_id();
+    return $dm->last_insert_id();
 });
 echo "   ✓ Transaction committed. New user ID: {$result}\n\n";
 
@@ -178,7 +178,7 @@ echo "   ✓ Transaction committed. New user ID: {$result}\n\n";
 // ============================================
 
 echo "10. Deleting Eve...\n";
-$db->delete($users)
+$dm->delete($users)
     ->where(eq($users->email, 'eve@example.com'))
     ->execute();
 echo "    ✓ Deleted user with email: eve@example.com\n\n";
@@ -188,7 +188,7 @@ echo "    ✓ Deleted user with email: eve@example.com\n\n";
 // ============================================
 
 echo "11. Final user count...\n";
-$final_users = $db->select()->from($users)->execute();
+$final_users = $dm->select()->from($users)->execute();
 echo "    Total users: " . count($final_users) . "\n\n";
 
 // ============================================
@@ -196,7 +196,7 @@ echo "    Total users: " . count($final_users) . "\n\n";
 // ============================================
 
 echo "12. Searching users with '@example.com' email...\n";
-$example_users = $db->select()
+$example_users = $dm->select()
     ->from($users)
     ->where(like($users->email, '%@example.com'))
     ->execute();

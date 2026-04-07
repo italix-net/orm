@@ -266,16 +266,16 @@ class Book extends ActiveRow
 ```php
 use function Italix\Orm\sqlite_memory;
 
-$db = sqlite_memory();
+$dm = sqlite_memory();
 $schema = new Schema('sqlite');
 
 // Create tables
-$db->create_tables(...$schema->get_tables());
+$dm->create_tables(...$schema->get_tables());
 
 // Set up persistence for each class
-Thing::set_persistence($db, $schema->things);
-Book::set_persistence($db, $schema->books);
-Person::set_persistence($db, $schema->persons);
+Thing::set_persistence($dm, $schema->things);
+Book::set_persistence($dm, $schema->books);
+Person::set_persistence($dm, $schema->persons);
 ```
 
 ## API Reference
@@ -872,7 +872,7 @@ $things = new Table('things', [
 ]);
 
 // Fast queries without joins
-$db->query_table($things)->where(eq($things->is_creative_work, 1))->find_many();
+$dm->query_table($things)->where(eq($things->is_creative_work, 1))->find_many();
 ```
 
 ### 2. Use Type Path for Hierarchy Queries

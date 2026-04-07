@@ -2,7 +2,7 @@
 
 namespace Italix\Orm\ActiveRow\Traits;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Italix\Orm\Schema\Table;
 
 use function Italix\Orm\Operators\eq;
@@ -19,7 +19,7 @@ use function Italix\Orm\Operators\eq;
  * }
  *
  * // Setup (once at bootstrap)
- * UserRow::set_persistence($db, $users_table);
+ * UserRow::set_persistence($dm, $users_table);
  *
  * // Usage
  * $user = UserRow::wrap($data);
@@ -30,9 +30,9 @@ trait Persistable
 {
     /**
      * Registry of database connections by class name
-     * @var array<string, IxOrm>
+     * @var array<string, DataManager>
      */
-    private static array $db_registry = [];
+    private static array $dm_registry = [];
 
     /**
      * Registry of table definitions by class name
@@ -43,31 +43,31 @@ trait Persistable
     /**
      * Set up persistence for this row class
      *
-     * @param IxOrm $db Database connection
+     * @param DataManager $dm Database connection
      * @param Table $table Table definition
      * @return void
      */
-    public static function set_persistence(IxOrm $db, Table $table): void
+    public static function set_persistence(DataManager $dm, Table $table): void
     {
-        self::$db_registry[static::class] = $db;
+        self::$dm_registry[static::class] = $dm;
         self::$table_registry[static::class] = $table;
     }
 
     /**
      * Get the database connection
      *
-     * @return IxOrm
+     * @return DataManager
      * @throws \RuntimeException If persistence not configured
      */
-    public static function get_db(): IxOrm
+    public static function get_dm(): DataManager
     {
-        if (!isset(self::$db_registry[static::class])) {
+        if (!isset(self::$dm_registry[static::class])) {
             throw new \RuntimeException(
                 'Persistence not configured for ' . static::class . '. ' .
-                'Call ' . static::class . '::set_persistence($db, $table) first.'
+                'Call ' . static::class . '::set_persistence($dm, $table) first.'
             );
         }
-        return self::$db_registry[static::class];
+        return self::$dm_registry[static::class];
     }
 
     /**
@@ -81,7 +81,7 @@ trait Persistable
         if (!isset(self::$table_registry[static::class])) {
             throw new \RuntimeException(
                 'Persistence not configured for ' . static::class . '. ' .
-                'Call ' . static::class . '::set_persistence($db, $table) first.'
+                'Call ' . static::class . '::set_persistence($dm, $table) first.'
             );
         }
         return self::$table_registry[static::class];
@@ -94,7 +94,7 @@ trait Persistable
      */
     public static function has_persistence(): bool
     {
-        return isset(self::$db_registry[static::class]) && isset(self::$table_registry[static::class]);
+        return isset(self::$dm_registry[static::class]) && isset(self::$table_registry[static::class]);
     }
 
     /**
@@ -108,7 +108,7 @@ trait Persistable
      */
     public function save(): self
     {
-        $db = static::get_db();
+        $dm = static::get_dm();
         $table = static::get_table();
         $pk = static::$primary_key;
 
@@ -124,7 +124,7 @@ trait Persistable
                 unset($dirty[$pk]);
 
                 if (!empty($dirty)) {
-                    $db->update($table)
+                    $dm->update($table)
                         ->set($dirty)
                         ->where(eq($table->$pk, $this[$pk]))
                         ->execute();
@@ -140,12 +140,12 @@ trait Persistable
                 unset($data[$pk]);
             }
 
-            $db->insert($table)
+            $dm->insert($table)
                 ->values($data)
                 ->execute();
 
             // Get the auto-generated ID
-            $newId = $db->last_insert_id();
+            $newId = $dm->last_insert_id();
             if ($newId) {
                 $this->data[$pk] = (int) $newId;
             }
@@ -173,14 +173,14 @@ trait Persistable
             throw new \LogicException('Cannot delete a record that does not exist');
         }
 
-        $db = static::get_db();
+        $dm = static::get_dm();
         $table = static::get_table();
         $pk = static::$primary_key;
 
         // Run before_delete hooks
         $this->run_hooks('before_delete');
 
-        $db->delete($table)
+        $dm->delete($table)
             ->where(eq($table->$pk, $this[$pk]))
             ->execute();
 
@@ -208,11 +208,11 @@ trait Persistable
             throw new \LogicException('Cannot refresh a record that does not exist');
         }
 
-        $db = static::get_db();
+        $dm = static::get_dm();
         $table = static::get_table();
         $pk = static::$primary_key;
 
-        $fresh = $db->query_table($table)->find($this[$pk]);
+        $fresh = $dm->query_table($table)->find($this[$pk]);
 
         if ($fresh === null) {
             throw new \RuntimeException('Record no longer exists in database');
@@ -237,10 +237,10 @@ trait Persistable
      */
     public static function find($id, array $with = []): ?self
     {
-        $db = static::get_db();
+        $dm = static::get_dm();
         $table = static::get_table();
 
-        $query = $db->query_table($table);
+        $query = $dm->query_table($table);
 
         if (!empty($with)) {
             $query->with($with);
@@ -263,10 +263,10 @@ trait Persistable
      */
     public static function find_all(array $options = []): array
     {
-        $db = static::get_db();
+        $dm = static::get_dm();
         $table = static::get_table();
 
-        $query = $db->query_table($table);
+        $query = $dm->query_table($table);
 
         if (isset($options['where'])) {
             $query = $query->where($options['where']);
@@ -341,7 +341,7 @@ trait Persistable
      */
     public static function upsert(array $attributes, array $values = []): self
     {
-        $db = static::get_db();
+        $dm = static::get_dm();
         $table = static::get_table();
         $pk = static::$primary_key;
 

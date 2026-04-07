@@ -106,28 +106,28 @@ class MultiDatabaseTestRunner
         echo str_repeat('-', 50) . "\n";
 
         try {
-            $db = $this->create_connection($dialect);
+            $dm = $this->create_connection($dialect);
             $schema = $this->create_test_schema($dialect);
 
             // Create test table
             $test_table = $schema->get_table('test_items');
-            $db->create_tables($test_table);
+            $dm->create_tables($test_table);
 
             // Setup persistence
-            TestItemRow::set_persistence($db, $test_table);
+            TestItemRow::set_persistence($dm, $test_table);
 
             // Run individual tests
-            $this->test_create($db, $test_table);
-            $this->test_read($db, $test_table);
-            $this->test_update($db, $test_table);
-            $this->test_delete($db, $test_table);
-            $this->test_json_handling($db, $test_table);
-            $this->test_timestamps($db, $test_table);
-            $this->test_query_builder($db, $test_table);
-            $this->test_boolean_handling($db, $test_table);
+            $this->test_create($dm, $test_table);
+            $this->test_read($dm, $test_table);
+            $this->test_update($dm, $test_table);
+            $this->test_delete($dm, $test_table);
+            $this->test_json_handling($dm, $test_table);
+            $this->test_timestamps($dm, $test_table);
+            $this->test_query_builder($dm, $test_table);
+            $this->test_boolean_handling($dm, $test_table);
 
             // Cleanup
-            $db->drop_tables($test_table);
+            $dm->drop_tables($test_table);
 
         } catch (\Exception $e) {
             $this->results[$dialect]['errors'][] = "Setup error: " . $e->getMessage();
@@ -203,7 +203,7 @@ class MultiDatabaseTestRunner
     /**
      * Test CREATE operation
      */
-    private function test_create($db, $table): void
+    private function test_create($dm, $table): void
     {
         try {
             $item = TestItemRow::create([
@@ -226,7 +226,7 @@ class MultiDatabaseTestRunner
     /**
      * Test READ operation
      */
-    private function test_read($db, $table): void
+    private function test_read($dm, $table): void
     {
         try {
             // Create item first
@@ -254,7 +254,7 @@ class MultiDatabaseTestRunner
     /**
      * Test UPDATE operation
      */
-    private function test_update($db, $table): void
+    private function test_update($dm, $table): void
     {
         try {
             $item = TestItemRow::create(['name' => 'Update Test', 'quantity' => 1]);
@@ -283,7 +283,7 @@ class MultiDatabaseTestRunner
     /**
      * Test DELETE operation
      */
-    private function test_delete($db, $table): void
+    private function test_delete($dm, $table): void
     {
         try {
             $item = TestItemRow::create(['name' => 'Delete Test']);
@@ -302,7 +302,7 @@ class MultiDatabaseTestRunner
     /**
      * Test JSON handling (stored as TEXT)
      */
-    private function test_json_handling($db, $table): void
+    private function test_json_handling($dm, $table): void
     {
         try {
             $item = TestItemRow::create(['name' => 'JSON Test']);
@@ -330,7 +330,7 @@ class MultiDatabaseTestRunner
     /**
      * Test timestamps
      */
-    private function test_timestamps($db, $table): void
+    private function test_timestamps($dm, $table): void
     {
         try {
             $item = TestItemRow::create(['name' => 'Timestamp Test']);
@@ -354,7 +354,7 @@ class MultiDatabaseTestRunner
     /**
      * Test query builder
      */
-    private function test_query_builder($db, $table): void
+    private function test_query_builder($dm, $table): void
     {
         try {
             // Create test data
@@ -395,7 +395,7 @@ class MultiDatabaseTestRunner
     /**
      * Test boolean handling
      */
-    private function test_boolean_handling($db, $table): void
+    private function test_boolean_handling($dm, $table): void
     {
         try {
             // Test true

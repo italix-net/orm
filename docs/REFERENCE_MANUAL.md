@@ -82,7 +82,7 @@ use function Italix\Orm\Schema\{sqlite_table, integer, varchar};
 use function Italix\Orm\Operators\{eq, desc};
 
 // 1. Create connection
-$db = sqlite(['database' => 'app.db']);
+$dm = sqlite(['database' => 'app.db']);
 
 // 2. Define schema
 $users = sqlite_table('users', [
@@ -92,28 +92,28 @@ $users = sqlite_table('users', [
 ]);
 
 // 3. Create table
-$db->create_tables($users);
+$dm->create_tables($users);
 
 // 4. Insert data
-$db->insert($users)->values([
+$dm->insert($users)->values([
     'name' => 'Alice',
     'email' => 'alice@example.com'
 ])->execute();
 
 // 5. Query data
-$results = $db->select()
+$results = $dm->select()
     ->from($users)
     ->where(eq($users->name, 'Alice'))
     ->execute();
 
 // 6. Update data
-$db->update($users)
+$dm->update($users)
     ->set(['name' => 'Alice Smith'])
     ->where(eq($users->id, 1))
     ->execute();
 
 // 7. Delete data
-$db->delete($users)
+$dm->delete($users)
     ->where(eq($users->id, 1))
     ->execute();
 ```
@@ -127,7 +127,7 @@ $db->delete($users)
 ```php
 use function Italix\Orm\mysql;
 
-$db = mysql([
+$dm = mysql([
     'host'     => 'localhost',
     'port'     => 3306,           // Optional, default: 3306
     'database' => 'myapp',
@@ -142,7 +142,7 @@ $db = mysql([
 ```php
 use function Italix\Orm\postgres;
 
-$db = postgres([
+$dm = postgres([
     'host'     => 'localhost',
     'port'     => 5432,           // Optional, default: 5432
     'database' => 'myapp',
@@ -157,10 +157,10 @@ $db = postgres([
 use function Italix\Orm\{sqlite, sqlite_memory};
 
 // File-based database
-$db = sqlite(['database' => '/path/to/database.db']);
+$dm = sqlite(['database' => '/path/to/database.db']);
 
 // In-memory database (useful for testing)
-$db = sqlite_memory();
+$dm = sqlite_memory();
 ```
 
 ### Supabase
@@ -169,7 +169,7 @@ $db = sqlite_memory();
 use function Italix\Orm\{supabase, supabase_from_credentials};
 
 // From credentials (recommended)
-$db = supabase_from_credentials(
+$dm = supabase_from_credentials(
     'your-project-ref',     // Project reference
     'your-db-password',     // Database password
     'postgres',             // Database name (default: postgres)
@@ -178,7 +178,7 @@ $db = supabase_from_credentials(
 );
 
 // Or with full config
-$db = supabase([
+$dm = supabase([
     'project_ref' => 'your-project-ref',
     'password'    => 'your-password',
     'database'    => 'postgres',
@@ -192,9 +192,9 @@ $db = supabase([
 ```php
 use function Italix\Orm\from_connection_string;
 
-$db = from_connection_string('mysql://user:pass@localhost:3306/myapp');
-$db = from_connection_string('postgres://user:pass@localhost:5432/myapp');
-$db = from_connection_string('sqlite:///path/to/database.db');
+$dm = from_connection_string('mysql://user:pass@localhost:3306/myapp');
+$dm = from_connection_string('postgres://user:pass@localhost:5432/myapp');
+$dm = from_connection_string('sqlite:///path/to/database.db');
 ```
 
 ---
@@ -274,14 +274,14 @@ $logs = sqlite_table('logs', [
 
 ```php
 // Create tables
-$db->create_tables($users, $posts, $logs);
+$dm->create_tables($users, $posts, $logs);
 
 // Drop tables
-$db->drop_tables($logs, $posts, $users);
+$dm->drop_tables($logs, $posts, $users);
 
 // Check if table exists
-if (!$db->table_exists('users')) {
-    $db->create_tables($users);
+if (!$dm->table_exists('users')) {
+    $dm->create_tables($users);
 }
 ```
 
@@ -354,7 +354,7 @@ $users_relations = define_relations($users, function($r) use ($users, $profiles,
 Creates a relational query builder for a table:
 
 ```php
-$query = $db->query_table($users);
+$query = $dm->query_table($users);
 ```
 
 #### find_many()
@@ -363,10 +363,10 @@ Get multiple records, optionally with relations:
 
 ```php
 // All users
-$users = $db->query_table($users)->find_many();
+$users = $dm->query_table($users)->find_many();
 
 // With conditions and relations
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->where(eq($users->is_active, true))
     ->with(['posts' => true])
     ->order_by(desc($users->created_at))
@@ -379,7 +379,7 @@ $users = $db->query_table($users)
 Get first matching record:
 
 ```php
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->where(eq($users->email, 'john@example.com'))
     ->with(['profile' => true])
     ->find_first();
@@ -394,7 +394,7 @@ Alias for `find_first()`.
 Get record by primary key:
 
 ```php
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->with(['posts' => true])
     ->find(1);
 ```
@@ -407,12 +407,12 @@ The `with` clause loads related data efficiently, avoiding N+1 query problems.
 
 ```php
 // Load single relation
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with(['posts' => true])
     ->find_many();
 
 // Load multiple relations
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with([
         'profile' => true,
         'posts' => true,
@@ -424,7 +424,7 @@ $users = $db->query_table($users)
 #### Nested Relations
 
 ```php
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with([
         'posts' => [
             'with' => [
@@ -453,7 +453,7 @@ $users = $db->query_table($users)
 #### Filtered Relations
 
 ```php
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with([
         'posts' => [
             'where' => eq($posts->published, true),
@@ -468,7 +468,7 @@ $users = $db->query_table($users)
 
 ```php
 // Load 'author' relation but name it 'writer' in results
-$posts = $db->query_table($posts)
+$posts = $dm->query_table($posts)
     ->with([
         'writer:author' => true,
     ])
@@ -518,7 +518,7 @@ $tags_relations = define_relations($tags, function($r) use ($posts, $tags, $post
 });
 
 // Query
-$posts = $db->query_table($posts)->with(['tags' => true])->find_many();
+$posts = $dm->query_table($posts)->with(['tags' => true])->find_many();
 ```
 
 ### 6.6 Polymorphic Relations
@@ -552,7 +552,7 @@ $comments_relations = define_relations($comments, function($r) use ($comments, $
 });
 
 // Query: Get comments with their parent (post or video)
-$comments = $db->query_table($comments)
+$comments = $dm->query_table($comments)
     ->with(['commentable' => true])
     ->find_many();
 
@@ -594,7 +594,7 @@ $videos_relations = define_relations($videos, function($r) use ($videos, $commen
 });
 
 // Query posts with their comments
-$posts = $db->query_table($posts)->with(['comments' => true])->find_many();
+$posts = $dm->query_table($posts)->with(['comments' => true])->find_many();
 ```
 
 ### 6.7 Shorthand Query Methods
@@ -603,7 +603,7 @@ For convenience, you can use shorthand methods on the database object:
 
 ```php
 // find_many with options
-$users = $db->find_many($users, [
+$users = $dm->find_many($users, [
     'where' => eq($users->is_active, true),
     'with' => ['posts' => true, 'profile' => true],
     'order_by' => desc($users->created_at),
@@ -612,13 +612,13 @@ $users = $db->find_many($users, [
 ]);
 
 // find_first with options
-$user = $db->find_first($users, [
+$user = $dm->find_first($users, [
     'where' => eq($users->id, 1),
     'with' => ['posts' => ['with' => ['comments' => true]]],
 ]);
 
 // find_one (alias for find_first)
-$user = $db->find_one($users, [
+$user = $dm->find_one($users, [
     'where' => eq($users->email, 'test@example.com'),
 ]);
 ```
@@ -673,7 +673,7 @@ Understanding when to use eager loading versus lazy loading (manual queries) is 
 
 ```php
 // Eager loading: 2 queries total
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with(['posts' => true, 'profile' => true])
     ->find_many();
 // Query 1: SELECT * FROM users
@@ -687,10 +687,10 @@ $users = $db->query_table($users)
 
 ```php
 // Lazy loading: query relations when needed
-$users = $db->query_table($users)->find_many();  // 1 query
+$users = $dm->query_table($users)->find_many();  // 1 query
 
 // Later, load posts for a specific user
-$userPosts = $db->query_table($posts)
+$userPosts = $dm->query_table($posts)
     ->where(eq($posts->author_id, $users[0]['id']))
     ->find_many();  // 1 additional query
 ```
@@ -701,11 +701,11 @@ The most common performance issue with ORMs is the "N+1 problem" - loading N rel
 
 ```php
 // PROBLEM: N+1 queries
-$users = $db->query_table($users)->find_many();  // 1 query
+$users = $dm->query_table($users)->find_many();  // 1 query
 
 foreach ($users as $user) {
     // Each iteration = 1 additional query
-    $posts = $db->query_table($posts)
+    $posts = $dm->query_table($posts)
         ->where(eq($posts->author_id, $user['id']))
         ->find_many();
 
@@ -718,7 +718,7 @@ foreach ($users as $user) {
 
 ```php
 // SOLUTION: 2 queries total, regardless of user count
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with(['posts' => true])
     ->find_many();
 
@@ -742,7 +742,7 @@ foreach ($users as $user) {
 **Example: Blog posts listing**
 
 ```php
-$posts = $db->query_table($posts)
+$posts = $dm->query_table($posts)
     ->with([
         'author' => true,           // Author name for byline
         'category' => true,         // Category for filtering/display
@@ -771,11 +771,11 @@ $posts = $db->query_table($posts)
 **Example: Conditional loading**
 
 ```php
-$user = $db->query_table($users)->find($userId);
+$user = $dm->query_table($users)->find($userId);
 
 // Only load activity log if user is admin viewing their own profile
 if ($isAdmin && $viewingOwnProfile) {
-    $activityLog = $db->query_table($activity_logs)
+    $activityLog = $dm->query_table($activity_logs)
         ->where(eq($activity_logs->user_id, $user['id']))
         ->order_by(desc($activity_logs->created_at))
         ->limit(50)
@@ -786,13 +786,13 @@ if ($isAdmin && $viewingOwnProfile) {
 **Example: Paginated related data**
 
 ```php
-$post = $db->query_table($posts)->find($postId);
+$post = $dm->query_table($posts)->find($postId);
 
 // Load comments with pagination (user controls page)
 $page = $_GET['comment_page'] ?? 1;
 $perPage = 20;
 
-$comments = $db->query_table($comments)
+$comments = $dm->query_table($comments)
     ->where(eq($comments->post_id, $post['id']))
     ->order_by(desc($comments->created_at))
     ->limit($perPage)
@@ -815,7 +815,7 @@ $comments = $db->query_table($comments)
 
 ```php
 // When displaying a list, eager load what you'll display
-$orders = $db->query_table($orders)
+$orders = $dm->query_table($orders)
     ->with([
         'customer' => true,
         'items' => ['with' => ['product' => true]],
@@ -827,7 +827,7 @@ $orders = $db->query_table($orders)
 
 ```php
 // BAD: Loading everything
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->with([
         'posts' => true,
         'comments' => true,
@@ -839,7 +839,7 @@ $user = $db->query_table($users)
     ->find($id);
 
 // GOOD: Load only what the current view needs
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->with(['profile' => true])  // Only profile for header
     ->find($id);
 ```
@@ -848,7 +848,7 @@ $user = $db->query_table($users)
 
 ```php
 // Instead of loading ALL posts (could be thousands)
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->with([
         'posts' => [
             'where' => eq($posts->published, true),
@@ -867,7 +867,7 @@ $offset = 0;
 $batchSize = 100;
 
 do {
-    $users = $db->query_table($users)
+    $users = $dm->query_table($users)
         ->with(['subscription' => true])
         ->limit($batchSize)
         ->offset($offset)
@@ -957,7 +957,7 @@ $data = ['id' => 1, 'name' => 'John', 'email' => 'john@example.com'];
 $user = UserRow::wrap($data);
 
 // Wrap multiple arrays
-$rows = $db->select()->from($users)->execute();
+$rows = $dm->select()->from($users)->execute();
 $users = UserRow::wrap_many($rows);
 
 // Create new (no original data)
@@ -1042,7 +1042,7 @@ Adds database persistence methods.
 
 ```php
 // Configure once at application bootstrap
-UserRow::set_persistence($db, $users_table);
+UserRow::set_persistence($dm, $users_table);
 ```
 
 #### CRUD Operations
@@ -1345,15 +1345,15 @@ foreach ($work->authors() as $author) {
 
 ```php
 // Select all columns
-$results = $db->select()->from($users)->execute();
+$results = $dm->select()->from($users)->execute();
 
 // Select specific columns
-$results = $db->select([$users->name, $users->email])
+$results = $dm->select([$users->name, $users->email])
     ->from($users)
     ->execute();
 
 // With all clauses
-$results = $db->select([$users->id, $users->name])
+$results = $dm->select([$users->id, $users->name])
     ->from($users)
     ->where(eq($users->is_active, true))
     ->order_by(desc($users->created_at))
@@ -1366,19 +1366,19 @@ $results = $db->select([$users->id, $users->name])
 
 ```php
 // Single record
-$db->insert($users)->values([
+$dm->insert($users)->values([
     'name'  => 'Alice',
     'email' => 'alice@example.com'
 ])->execute();
 
 // Multiple records
-$db->insert($users)->values([
+$dm->insert($users)->values([
     ['name' => 'Bob', 'email' => 'bob@example.com'],
     ['name' => 'Charlie', 'email' => 'charlie@example.com'],
 ])->execute();
 
 // With RETURNING (PostgreSQL/SQLite)
-$inserted = $db->insert($users)
+$inserted = $dm->insert($users)
     ->values(['name' => 'Dave', 'email' => 'dave@example.com'])
     ->returning($users->id)
     ->execute();
@@ -1388,7 +1388,7 @@ $inserted = $db->insert($users)
 
 ```php
 // ON CONFLICT DO UPDATE
-$db->insert($users)
+$dm->insert($users)
     ->values(['name' => 'Alice', 'email' => 'alice@example.com'])
     ->on_conflict_do_update(['email'], [
         'name' => 'Alice Updated'
@@ -1396,7 +1396,7 @@ $db->insert($users)
     ->execute();
 
 // ON CONFLICT DO NOTHING
-$db->insert($users)
+$dm->insert($users)
     ->values(['name' => 'Alice', 'email' => 'alice@example.com'])
     ->on_conflict_do_nothing(['email'])
     ->execute();
@@ -1405,7 +1405,7 @@ $db->insert($users)
 ### UPDATE
 
 ```php
-$db->update($users)
+$dm->update($users)
     ->set([
         'name' => 'New Name',
         'is_active' => false
@@ -1417,7 +1417,7 @@ $db->update($users)
 ### DELETE
 
 ```php
-$db->delete($users)
+$dm->delete($users)
     ->where(eq($users->id, 1))
     ->execute();
 ```
@@ -1426,31 +1426,31 @@ $db->delete($users)
 
 ```php
 // INNER JOIN
-$results = $db->select([$users->name, $posts->title])
+$results = $dm->select([$users->name, $posts->title])
     ->from($users)
     ->inner_join($posts, eq($users->id, $posts->author_id))
     ->execute();
 
 // LEFT JOIN
-$results = $db->select([$users->name, $posts->title])
+$results = $dm->select([$users->name, $posts->title])
     ->from($users)
     ->left_join($posts, eq($users->id, $posts->author_id))
     ->execute();
 
 // RIGHT JOIN
-$results = $db->select([$users->name, $posts->title])
+$results = $dm->select([$users->name, $posts->title])
     ->from($posts)
     ->right_join($users, eq($users->id, $posts->author_id))
     ->execute();
 
 // FULL OUTER JOIN
-$results = $db->select()
+$results = $dm->select()
     ->from($users)
     ->full_join($posts, eq($users->id, $posts->author_id))
     ->execute();
 
 // CROSS JOIN
-$results = $db->select()
+$results = $dm->select()
     ->from($products)
     ->cross_join($colors)
     ->execute();
@@ -1461,7 +1461,7 @@ $results = $db->select()
 ```php
 use function Italix\Orm\Operators\{sql_count, sql_sum, gte, raw};
 
-$results = $db->select([
+$results = $dm->select([
         $orders->product,
         sql_count()->as('order_count'),
         sql_sum($orders->amount)->as('total')
@@ -1521,7 +1521,7 @@ use function Italix\Orm\Operators\{
 **Example: Complex nested conditions**
 
 ```php
-$db->select()->from($users)->where(
+$dm->select()->from($users)->where(
     and_(
         eq($users->status, 'active'),
         or_(
@@ -1585,12 +1585,12 @@ ilike($users->name, 'alice')
 
 ```php
 // Raw SQL in WHERE
-$db->select()->from($users)
+$dm->select()->from($users)
     ->where(raw('YEAR(created_at) = ?', [2024]))
     ->execute();
 
 // Raw in SELECT
-$db->select([raw('COUNT(*) as total')])
+$dm->select([raw('COUNT(*) as total')])
     ->from($users)
     ->execute();
 ```
@@ -1618,7 +1618,7 @@ use function Italix\Orm\Operators\{
 ### Using Aliases
 
 ```php
-$db->select([
+$dm->select([
     sql_count()->as('total_users'),
     sql_avg($users->age)->as('average_age'),
     sql_min($users->created_at)->as('first_signup')
@@ -1635,10 +1635,10 @@ The `sql()` method provides a safe way to write custom SQL with proper parameter
 
 ```php
 // Simple parameterized query
-$results = $db->sql('SELECT * FROM users WHERE id = ?', [$userId])->all();
+$results = $dm->sql('SELECT * FROM users WHERE id = ?', [$userId])->all();
 
 // Multiple parameters
-$results = $db->sql(
+$results = $dm->sql(
     'SELECT * FROM users WHERE status = ? AND age > ?',
     ['active', 18]
 )->all();
@@ -1657,7 +1657,7 @@ $results = $db->sql(
 ### Fluent Builder
 
 ```php
-$results = $db->sql()
+$results = $dm->sql()
     ->append('SELECT * FROM ')
     ->identifier('users')         // Safely quoted: "users" or `users`
     ->append(' WHERE ')
@@ -1694,7 +1694,7 @@ $activeFilter = sql(' WHERE status = ?', ['active']);
 $orderClause = sql(' ORDER BY name ASC');
 
 // Combine fragments
-$results = $db->sql()
+$results = $dm->sql()
     ->merge($baseQuery)
     ->merge($activeFilter)
     ->merge($orderClause)
@@ -1707,7 +1707,7 @@ $results = $db->sql()
 $minAge = $_GET['min_age'] ?? null;
 $status = $_GET['status'] ?? null;
 
-$results = $db->sql()
+$results = $dm->sql()
     ->append('SELECT * FROM users WHERE 1=1')
     ->when($minAge !== null, ' AND age >= ?', [$minAge])
     ->when($status !== null, ' AND status = ?', [$status])
@@ -1721,15 +1721,15 @@ $results = $db->sql()
 ### Manual Transactions
 
 ```php
-$db->begin_transaction();
+$dm->begin_transaction();
 
 try {
-    $db->insert($users)->values(['name' => 'Alice'])->execute();
-    $db->insert($orders)->values(['user_id' => 1, 'amount' => 100])->execute();
+    $dm->insert($users)->values(['name' => 'Alice'])->execute();
+    $dm->insert($orders)->values(['user_id' => 1, 'amount' => 100])->execute();
     
-    $db->commit();
+    $dm->commit();
 } catch (Exception $e) {
-    $db->rollback();
+    $dm->rollback();
     throw $e;
 }
 ```
@@ -1737,11 +1737,11 @@ try {
 ### Using Callbacks
 
 ```php
-$result = $db->transaction(function($db) use ($users, $orders) {
-    $db->insert($users)->values(['name' => 'Alice'])->execute();
-    $userId = $db->last_insert_id();
+$result = $dm->transaction(function($dm) use ($users, $orders) {
+    $dm->insert($users)->values(['name' => 'Alice'])->execute();
+    $userId = $dm->last_insert_id();
     
-    $db->insert($orders)->values([
+    $dm->insert($orders)->values([
         'user_id' => $userId,
         'amount' => 100
     ])->execute();
@@ -1770,21 +1770,21 @@ Italix ORM protects against SQL injection in several ways:
 
 ```php
 // ✅ SAFE: Using query builder with operators
-$db->select()->from($users)
+$dm->select()->from($users)
     ->where(eq($users->name, $userInput))  // $userInput is parameterized
     ->execute();
 
 // ✅ SAFE: Using sql() with placeholders
-$db->sql('SELECT * FROM users WHERE name = ?', [$userInput])->all();
+$dm->sql('SELECT * FROM users WHERE name = ?', [$userInput])->all();
 
 // ✅ SAFE: Using identifier() for dynamic table/column names
-$db->sql()
+$dm->sql()
     ->append('SELECT * FROM ')
     ->identifier($tableName)  // Properly quoted
     ->all();
 
 // ⚠️ CAUTION: Raw append() - only use with trusted input
-$db->sql()
+$dm->sql()
     ->append('SELECT * FROM users')
     ->append(' WHERE status = ')
     ->append("'active'")  // Only if 'active' is hardcoded, not user input!
@@ -1811,7 +1811,7 @@ php tests/SecurityTest.php
 
 ## 14. API Reference
 
-### IxOrm Class
+### DataManager Class
 
 | Method | Return | Description |
 |--------|--------|-------------|
@@ -1891,7 +1891,7 @@ php tests/SecurityTest.php
 
 | Method | Return | Description |
 |--------|--------|-------------|
-| `set_persistence($db, $table)` | `void` | Configure DB and table (static) |
+| `set_persistence($dm, $table)` | `void` | Configure DB and table (static) |
 | `has_persistence()` | `bool` | Check if configured (static) |
 | `find($id, $with)` | `static\|null` | Find by primary key (static) |
 | `find_all($options)` | `array` | Find multiple (static) |
@@ -1993,13 +1993,13 @@ $users = mysql_table('users', [
 ]);
 
 // Register user
-$db->insert($users)->values([
+$dm->insert($users)->values([
     'email' => $email,
     'password_hash' => password_hash($password, PASSWORD_DEFAULT),
 ])->execute();
 
 // Find user by email
-$user = $db->select()
+$user = $dm->select()
     ->from($users)
     ->where(eq($users->email, $email))
     ->execute();
@@ -2036,20 +2036,20 @@ $order_items = mysql_table('order_items', [
 ]);
 
 // Create order with transaction
-$orderId = $db->transaction(function($db) use ($orders, $order_items, $products, $cart, $userId) {
+$orderId = $dm->transaction(function($dm) use ($orders, $order_items, $products, $cart, $userId) {
     // Calculate total
     $total = array_sum(array_map(fn($item) => $item['price'] * $item['qty'], $cart));
     
     // Create order
-    $db->insert($orders)->values([
+    $dm->insert($orders)->values([
         'user_id' => $userId,
         'total' => $total,
     ])->execute();
-    $orderId = $db->last_insert_id();
+    $orderId = $dm->last_insert_id();
     
     // Add items and update stock
     foreach ($cart as $item) {
-        $db->insert($order_items)->values([
+        $dm->insert($order_items)->values([
             'order_id' => $orderId,
             'product_id' => $item['id'],
             'quantity' => $item['qty'],
@@ -2057,7 +2057,7 @@ $orderId = $db->transaction(function($db) use ($orders, $order_items, $products,
         ])->execute();
         
         // Decrease stock
-        $db->sql(
+        $dm->sql(
             'UPDATE products SET stock = stock - ? WHERE id = ?',
             [$item['qty'], $item['id']]
         )->execute();
@@ -2071,7 +2071,7 @@ $orderId = $db->transaction(function($db) use ($orders, $order_items, $products,
 
 ```php
 // Sales by product
-$results = $db->select([
+$results = $dm->select([
         $products->name,
         sql_count()->as('times_ordered'),
         sql_sum($order_items->quantity)->as('total_units'),
@@ -2094,19 +2094,19 @@ $results = $db->select([
 **Error: "No table specified for SELECT"**
 ```php
 // Wrong
-$db->select()->where(eq($users->id, 1))->execute();
+$dm->select()->where(eq($users->id, 1))->execute();
 
 // Correct
-$db->select()->from($users)->where(eq($users->id, 1))->execute();
+$dm->select()->from($users)->where(eq($users->id, 1))->execute();
 ```
 
 **Error: "No values provided for INSERT"**
 ```php
 // Wrong
-$db->insert($users)->execute();
+$dm->insert($users)->execute();
 
 // Correct
-$db->insert($users)->values(['name' => 'Test'])->execute();
+$dm->insert($users)->values(['name' => 'Test'])->execute();
 ```
 
 **Error: Naming conflict with PHP's built-in functions**
@@ -2116,14 +2116,14 @@ $db->insert($users)->values(['name' => 'Test'])->execute();
 
 use function Italix\Orm\Operators\in_array as sql_in_array;
 
-$db->select()->from($users)->where(sql_in_array($users->status, ['a', 'b']))->execute();
+$dm->select()->from($users)->where(sql_in_array($users->status, ['a', 'b']))->execute();
 ```
 
 ### Debug Tips
 
 **View generated SQL:**
 ```php
-$builder = $db->select()->from($users)->where(eq($users->id, 1));
+$builder = $dm->select()->from($users)->where(eq($users->id, 1));
 $params = [];
 echo $builder->to_sql($params);
 print_r($params);
@@ -2131,7 +2131,7 @@ print_r($params);
 
 **View Sql object query:**
 ```php
-$sql = $db->sql()
+$sql = $dm->sql()
     ->append('SELECT * FROM users WHERE id = ')
     ->value(1);
 echo $sql->get_query();      // SELECT * FROM users WHERE id = ?

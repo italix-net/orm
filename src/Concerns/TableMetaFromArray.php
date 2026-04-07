@@ -11,7 +11,7 @@ declare(strict_types=1);
 namespace Italix\Orm\Concerns;
 
 use Italix\Contracts\ColumnMeta;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 /**
  * Trait to implement TableMeta interface from an array of columns.
@@ -37,8 +37,8 @@ trait TableMetaFromArray
     /** @var callable|null Custom fetcher for relation options */
     protected $relation_fetcher = null;
 
-    /** @var IxOrm|null Database connection for relations */
-    protected ?IxOrm $forms_db = null;
+    /** @var DataManager|null Database connection for relations */
+    protected ?DataManager $forms_dm = null;
 
     /**
      * Override this method to provide your columns array.
@@ -104,19 +104,19 @@ trait TableMetaFromArray
      * This allows RelationMetaAdapter instances to fetch options
      * from related tables automatically.
      *
-     * @param IxOrm $db
+     * @param DataManager $dm
      * @return self
      */
-    public function set_forms_db(IxOrm $db): self
+    public function set_forms_dm(DataManager $dm): self
     {
-        $this->forms_db = $db;
+        $this->forms_dm = $dm;
 
         // Propagate to columns that have relations
         foreach ($this->get_columns_for_description() as $column) {
             if (method_exists($column, 'get_relation')) {
                 $relation = $column->get_relation();
-                if ($relation !== null && method_exists($relation, 'set_db')) {
-                    $relation->set_db($db);
+                if ($relation !== null && method_exists($relation, 'set_dm')) {
+                    $relation->set_dm($dm);
                 }
             }
         }
@@ -127,10 +127,10 @@ trait TableMetaFromArray
     /**
      * Get the database connection for forms.
      *
-     * @return IxOrm|null
+     * @return DataManager|null
      */
-    public function get_forms_db(): ?IxOrm
+    public function get_forms_dm(): ?DataManager
     {
-        return $this->forms_db;
+        return $this->forms_dm;
     }
 }

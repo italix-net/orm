@@ -385,8 +385,8 @@ $comments_relations = define_relations($comments, function($r) use ($comments, $
 // 3. Create Database and Seed Data
 // ============================================
 
-$db = sqlite_memory();
-$db->create_tables(
+$dm = sqlite_memory();
+$dm->create_tables(
     $persons,
     $organizations,
     $articles,
@@ -399,34 +399,34 @@ $db->create_tables(
 );
 
 // Seed Persons
-$db->insert($persons)->values([
+$dm->insert($persons)->values([
     ['name' => 'John Doe', 'email' => 'john@example.com', 'job_title' => 'Software Engineer'],
     ['name' => 'Jane Smith', 'email' => 'jane@example.com', 'job_title' => 'Technical Writer'],
     ['name' => 'Bob Wilson', 'email' => 'bob@example.com', 'job_title' => 'Reviewer'],
 ])->execute();
 
 // Seed Organizations
-$db->insert($organizations)->values([
+$dm->insert($organizations)->values([
     ['name' => 'TechCorp', 'legal_name' => 'TechCorp Inc.', 'url' => 'https://techcorp.example.com', 'founding_date' => '2010-01-15'],
     ['name' => 'O\'Reilly Media', 'legal_name' => 'O\'Reilly Media, Inc.', 'url' => 'https://oreilly.com', 'founding_date' => '1978-01-01'],
     ['name' => 'Acme Reviews', 'legal_name' => 'Acme Reviews LLC', 'url' => 'https://acmereviews.example.com', 'founding_date' => '2015-06-01'],
 ])->execute();
 
 // Seed Articles (mix of person and organization authors)
-$db->insert($articles)->values([
+$dm->insert($articles)->values([
     ['headline' => 'Introduction to PHP 8', 'article_body' => 'PHP 8 brings many new features...', 'word_count' => 1500, 'author_type' => 'person', 'author_id' => 1, 'date_published' => '2024-01-15 10:00:00', 'is_accessible_for_free' => true],
     ['headline' => 'Building Modern APIs', 'article_body' => 'REST APIs are essential...', 'word_count' => 2000, 'author_type' => 'person', 'author_id' => 2, 'date_published' => '2024-02-20 14:30:00', 'is_accessible_for_free' => true],
     ['headline' => 'TechCorp Annual Report 2024', 'article_body' => 'This year we achieved...', 'word_count' => 5000, 'author_type' => 'organization', 'author_id' => 1, 'date_published' => '2024-03-01 09:00:00', 'is_accessible_for_free' => false],
 ])->execute();
 
 // Seed Books
-$db->insert($books)->values([
+$dm->insert($books)->values([
     ['name' => 'Learning PHP Design Patterns', 'isbn' => '978-1-234567-89-0', 'number_of_pages' => 350, 'author_type' => 'person', 'author_id' => 1, 'publisher_id' => 2, 'date_published' => '2023-06-15', 'book_format' => 'Paperback'],
     ['name' => 'Official TechCorp Developer Guide', 'isbn' => '978-1-234567-89-1', 'number_of_pages' => 500, 'author_type' => 'organization', 'author_id' => 1, 'publisher_id' => 2, 'date_published' => '2024-01-01', 'book_format' => 'EBook'],
 ])->execute();
 
 // Seed Reviews (of different item types, by different author types)
-$db->insert($reviews)->values([
+$dm->insert($reviews)->values([
     // Person reviews an Article
     ['review_body' => 'Excellent introduction to PHP 8!', 'review_rating' => 4.5, 'author_type' => 'person', 'author_id' => 3, 'item_reviewed_type' => 'article', 'item_reviewed_id' => 1],
     // Person reviews a Book
@@ -438,7 +438,7 @@ $db->insert($reviews)->values([
 ])->execute();
 
 // Seed Comments (on different content types, with nested replies)
-$db->insert($comments)->values([
+$dm->insert($comments)->values([
     // Comments on Article 1
     ['text' => 'This helped me understand PHP 8!', 'author_type' => 'person', 'author_id' => 2, 'about_type' => 'article', 'about_id' => 1, 'parent_comment_id' => null],
     ['text' => 'Thanks for the great article!', 'author_type' => 'person', 'author_id' => 3, 'about_type' => 'article', 'about_id' => 1, 'parent_comment_id' => null],
@@ -451,20 +451,20 @@ $db->insert($comments)->values([
 ])->execute();
 
 // Seed MediaObjects
-$db->insert($media_objects)->values([
+$dm->insert($media_objects)->values([
     ['content_url' => '/images/php8-article-hero.jpg', 'encoding_format' => 'image/jpeg', 'name' => 'PHP 8 Article Hero Image', 'content_size' => 150000, 'associated_type' => 'article', 'associated_id' => 1],
     ['content_url' => '/images/book-cover-php-patterns.jpg', 'encoding_format' => 'image/jpeg', 'name' => 'Book Cover', 'content_size' => 200000, 'associated_type' => 'book', 'associated_id' => 1],
     ['content_url' => '/images/techcorp-logo.png', 'encoding_format' => 'image/png', 'name' => 'TechCorp Logo', 'content_size' => 50000, 'associated_type' => 'organization', 'associated_id' => 1],
 ])->execute();
 
 // Seed WebPages and Article-Page relationships
-$db->insert($web_pages)->values([
+$dm->insert($web_pages)->values([
     ['name' => 'Home', 'url' => '/', 'description' => 'Homepage'],
     ['name' => 'PHP Tutorials', 'url' => '/tutorials/php', 'description' => 'PHP tutorial collection'],
     ['name' => 'API Development', 'url' => '/tutorials/api', 'description' => 'API development guides'],
 ])->execute();
 
-$db->insert($article_pages)->values([
+$dm->insert($article_pages)->values([
     ['article_id' => 1, 'web_page_id' => 1, 'position' => 1],
     ['article_id' => 1, 'web_page_id' => 2, 'position' => 1],
     ['article_id' => 2, 'web_page_id' => 1, 'position' => 2],
@@ -481,7 +481,7 @@ echo "=== Schema.org Relations Example ===\n\n";
 // Example 1: Articles with polymorphic authors
 // ----------------------------------------
 echo "1. Articles with authors (Person or Organization):\n";
-$all_articles = $db->query_table($articles)
+$all_articles = $dm->query_table($articles)
     ->with(['author' => true])
     ->order_by(desc($articles->date_published))
     ->find_many();
@@ -498,7 +498,7 @@ echo "\n";
 // Example 2: Books with author, publisher, and reviews
 // ----------------------------------------
 echo "2. Books with full relations:\n";
-$all_books = $db->query_table($books)
+$all_books = $dm->query_table($books)
     ->with([
         'author' => true,
         'publisher' => true,
@@ -532,7 +532,7 @@ foreach ($all_books as $book) {
 // Example 3: Person with all authored content
 // ----------------------------------------
 echo "3. Person with all their authored content:\n";
-$person = $db->query_table($persons)
+$person = $dm->query_table($persons)
     ->with([
         'authored_articles' => true,
         'authored_books' => true,
@@ -559,7 +559,7 @@ echo "\n";
 // Example 4: Organization with published books and received reviews
 // ----------------------------------------
 echo "4. Organization profile:\n";
-$org = $db->query_table($organizations)
+$org = $dm->query_table($organizations)
     ->with([
         'authored_articles' => true,
         'published_books' => [
@@ -593,7 +593,7 @@ echo "\n";
 // Example 5: Reviews with polymorphic itemReviewed
 // ----------------------------------------
 echo "5. Reviews with what they review:\n";
-$all_reviews = $db->query_table($reviews)
+$all_reviews = $dm->query_table($reviews)
     ->with([
         'author' => true,
         'item_reviewed' => true,
@@ -617,7 +617,7 @@ foreach ($all_reviews as $review) {
 // Example 6: Article with comments (including nested)
 // ----------------------------------------
 echo "6. Article with comments and replies:\n";
-$article_with_comments = $db->query_table($articles)
+$article_with_comments = $dm->query_table($articles)
     ->with([
         'author' => true,
         'comments' => [
@@ -657,7 +657,7 @@ echo "\n";
 // Example 7: Using aliases for clearer semantics
 // ----------------------------------------
 echo "7. Using aliases for semantic clarity:\n";
-$org_profile = $db->query_table($organizations)
+$org_profile = $dm->query_table($organizations)
     ->with([
         'written_content:authored_articles' => true,  // Alias
         'books_we_published:published_books' => true, // Alias

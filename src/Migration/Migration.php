@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 namespace Italix\Orm\Migration;
 
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 
 /**
  * Base class for database migrations.
@@ -18,8 +18,8 @@ use Italix\Orm\IxOrm;
  */
 abstract class Migration
 {
-    /** @var IxOrm Database connection */
-    protected IxOrm $db;
+    /** @var DataManager Database connection */
+    protected DataManager $dm;
     
     /** @var bool Whether to wrap migration in transaction */
     protected bool $transactional = true;
@@ -40,18 +40,18 @@ abstract class Migration
     /**
      * Set the database connection
      */
-    public function set_connection(IxOrm $db): void
+    public function set_connection(DataManager $dm): void
     {
-        $this->db = $db;
-        Schema::set_connection($db);
+        $this->dm = $dm;
+        Schema::set_connection($dm);
     }
 
     /**
      * Get the database connection
      */
-    public function get_connection(): IxOrm
+    public function get_connection(): DataManager
     {
-        return $this->db;
+        return $this->dm;
     }
 
     /**
@@ -86,7 +86,7 @@ abstract class Migration
      */
     protected function sql(string $query, array $params = []): void
     {
-        $this->db->execute($query, $params);
+        $this->dm->execute($query, $params);
     }
 
     /**
@@ -98,7 +98,7 @@ abstract class Migration
      */
     protected function query(string $query, array $params = []): array
     {
-        return $this->db->query($query, $params);
+        return $this->dm->query($query, $params);
     }
 
     /**
@@ -108,7 +108,7 @@ abstract class Migration
      */
     protected function dialect(array $queries): void
     {
-        $dialect = $this->db->get_driver()->get_dialect_name();
+        $dialect = $this->dm->get_driver()->get_dialect_name();
         
         if (isset($queries[$dialect])) {
             $this->sql($queries[$dialect]);
@@ -145,7 +145,7 @@ abstract class Migration
             return;
         }
         
-        $dialect = $this->db->get_driver()->get_dialect_name();
+        $dialect = $this->dm->get_driver()->get_dialect_name();
         $table_quoted = $this->quote_identifier($table, $dialect);
         
         // Get columns from first row
@@ -157,7 +157,7 @@ abstract class Migration
         
         foreach ($data as $row) {
             $values = array_map(fn($c) => $row[$c] ?? null, $columns);
-            $this->db->execute($sql, $values);
+            $this->dm->execute($sql, $values);
         }
     }
 

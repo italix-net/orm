@@ -9,7 +9,7 @@ require_once __DIR__ . '/../../src/autoload.php';
 require_once __DIR__ . '/../../src/ActiveRow/functions.php';
 
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Examples\DelegatedTypes\Schema;
 use Examples\DelegatedTypes\Models\Thing;
 use Examples\DelegatedTypes\Models\Book;
@@ -36,7 +36,7 @@ spl_autoload_register(function ($class) {
  */
 class DelegatedTypesTestRunner
 {
-    private IxOrm $db;
+    private DataManager $dm;
     private Schema $schema;
     private array $passed = [];
     private array $failed = [];
@@ -66,23 +66,23 @@ class DelegatedTypesTestRunner
     private function setup(): void
     {
         $driver = Driver::sqlite_memory();
-        $this->db = new IxOrm($driver);
+        $this->dm = new DataManager($driver);
         $this->schema = new Schema();
 
-        $this->db->create_tables(...$this->schema->get_tables());
+        $this->dm->create_tables(...$this->schema->get_tables());
 
-        Thing::set_persistence($this->db, $this->schema->things);
-        Book::set_persistence($this->db, $this->schema->books);
-        Movie::set_persistence($this->db, $this->schema->movies);
-        Article::set_persistence($this->db, $this->schema->articles);
-        Person::set_persistence($this->db, $this->schema->persons);
-        Organization::set_persistence($this->db, $this->schema->organizations);
-        Contribution::set_persistence($this->db, $this->schema->contributions);
+        Thing::set_persistence($this->dm, $this->schema->things);
+        Book::set_persistence($this->dm, $this->schema->books);
+        Movie::set_persistence($this->dm, $this->schema->movies);
+        Article::set_persistence($this->dm, $this->schema->articles);
+        Person::set_persistence($this->dm, $this->schema->persons);
+        Organization::set_persistence($this->dm, $this->schema->organizations);
+        Contribution::set_persistence($this->dm, $this->schema->contributions);
     }
 
     private function teardown(): void
     {
-        $this->db->drop_tables(...array_reverse($this->schema->get_tables()));
+        $this->dm->drop_tables(...array_reverse($this->schema->get_tables()));
     }
 
     private function assert(string $name, bool $condition): void

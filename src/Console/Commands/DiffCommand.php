@@ -45,8 +45,8 @@ class DiffCommand extends Command
             return 1;
         }
         
-        $db = $this->get_database();
-        $differ = new SchemaDiffer($db);
+        $dm = $this->get_database();
+        $differ = new SchemaDiffer($dm);
         
         $diff = $differ->diff($tables);
         $summary = $differ->get_diff_summary($diff);

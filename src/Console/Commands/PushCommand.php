@@ -45,8 +45,8 @@ class PushCommand extends Command
             return 1;
         }
         
-        $db = $this->get_database();
-        $pusher = new SchemaPusher($db);
+        $dm = $this->get_database();
+        $pusher = new SchemaPusher($dm);
         
         // Preview mode
         if ($this->has_option('dry-run')) {

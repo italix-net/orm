@@ -23,7 +23,7 @@ require_once __DIR__ . '/../../../src/autoload.php';
 require_once __DIR__ . '/../../../src/ActiveRow/functions.php';
 
 use Italix\Orm\Dialects\Driver;
-use Italix\Orm\IxOrm;
+use Italix\Orm\DataManager;
 use Examples\Ecommerce\Schema;
 use Examples\Ecommerce\Models\Thing;
 use Examples\Ecommerce\Models\Product;
@@ -52,7 +52,7 @@ spl_autoload_register(function ($class) {
 class ExportProducts
 {
     private WooCommerceClient $client;
-    private IxOrm $db;
+    private DataManager $dm;
     private Schema $schema;
     private array $config;
     private bool $debug;
@@ -111,18 +111,18 @@ class ExportProducts
             throw new \RuntimeException("Unsupported database type: {$dbType}");
         }
 
-        $this->db = new IxOrm($driver);
+        $this->dm = new DataManager($driver);
         $this->schema = new Schema();
 
         // Set up persistence for models
-        Thing::set_persistence($this->db, $this->schema->things);
-        Product::set_persistence($this->db, $this->schema->products);
-        Order::set_persistence($this->db, $this->schema->orders);
-        OrderItem::set_persistence($this->db, $this->schema->order_items);
-        Customer::set_persistence($this->db, $this->schema->customers);
-        Person::set_persistence($this->db, $this->schema->persons);
-        Organization::set_persistence($this->db, $this->schema->organizations);
-        PostalAddress::set_persistence($this->db, $this->schema->postal_addresses);
+        Thing::set_persistence($this->dm, $this->schema->things);
+        Product::set_persistence($this->dm, $this->schema->products);
+        Order::set_persistence($this->dm, $this->schema->orders);
+        OrderItem::set_persistence($this->dm, $this->schema->order_items);
+        Customer::set_persistence($this->dm, $this->schema->customers);
+        Person::set_persistence($this->dm, $this->schema->persons);
+        Organization::set_persistence($this->dm, $this->schema->organizations);
+        PostalAddress::set_persistence($this->dm, $this->schema->postal_addresses);
     }
 
     /**

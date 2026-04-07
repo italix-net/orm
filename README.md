@@ -43,7 +43,7 @@ use function Italix\Orm\Schema\{sqlite_table, integer, text, varchar};
 use function Italix\Orm\Operators\{eq, desc};
 
 // Create a SQLite database connection
-$db = sqlite(['database' => 'app.db']);
+$dm = sqlite(['database' => 'app.db']);
 
 // Define a table schema
 $users = sqlite_table('users', [
@@ -53,28 +53,28 @@ $users = sqlite_table('users', [
 ]);
 
 // Create the table
-$db->create_tables($users);
+$dm->create_tables($users);
 
 // Insert a record
-$db->insert($users)->values([
+$dm->insert($users)->values([
     'name'  => 'John Doe',
     'email' => 'john@example.com',
 ])->execute();
 
 // Query records
-$results = $db->select()
+$results = $dm->select()
     ->from($users)
     ->where(eq($users->email, 'john@example.com'))
     ->execute();
 
 // Update a record
-$db->update($users)
+$dm->update($users)
     ->set(['name' => 'Jane Doe'])
     ->where(eq($users->id, 1))
     ->execute();
 
 // Delete a record
-$db->delete($users)
+$dm->delete($users)
     ->where(eq($users->id, 1))
     ->execute();
 ```
@@ -86,7 +86,7 @@ $db->delete($users)
 ```php
 use function Italix\Orm\mysql;
 
-$db = mysql([
+$dm = mysql([
     'host'     => 'localhost',
     'port'     => 3306,
     'database' => 'myapp',
@@ -101,7 +101,7 @@ $db = mysql([
 ```php
 use function Italix\Orm\postgres;
 
-$db = postgres([
+$dm = postgres([
     'host'     => 'localhost',
     'port'     => 5432,
     'database' => 'myapp',
@@ -116,10 +116,10 @@ $db = postgres([
 use function Italix\Orm\{sqlite, sqlite_memory};
 
 // File-based
-$db = sqlite(['database' => '/path/to/database.db']);
+$dm = sqlite(['database' => '/path/to/database.db']);
 
 // In-memory
-$db = sqlite_memory();
+$dm = sqlite_memory();
 ```
 
 ### Supabase
@@ -128,7 +128,7 @@ $db = sqlite_memory();
 use function Italix\Orm\{supabase, supabase_from_credentials};
 
 // From credentials
-$db = supabase_from_credentials(
+$dm = supabase_from_credentials(
     'your-project-ref',
     'your-password',
     'postgres',
@@ -137,7 +137,7 @@ $db = supabase_from_credentials(
 );
 
 // Or with full config
-$db = supabase([
+$dm = supabase([
     'project_ref' => 'your-project-ref',
     'password'    => 'your-password',
     'database'    => 'postgres',
@@ -151,9 +151,9 @@ $db = supabase([
 ```php
 use function Italix\Orm\from_connection_string;
 
-$db = from_connection_string('mysql://user:pass@localhost:3306/myapp');
-$db = from_connection_string('postgres://user:pass@localhost:5432/myapp');
-$db = from_connection_string('sqlite:///path/to/database.db');
+$dm = from_connection_string('mysql://user:pass@localhost:3306/myapp');
+$dm = from_connection_string('postgres://user:pass@localhost:5432/myapp');
+$dm = from_connection_string('sqlite:///path/to/database.db');
 ```
 
 ## Migrations
@@ -460,8 +460,8 @@ Consolidate old migrations into a single file:
 use Italix\Orm\Migration\Migrator;
 use function Italix\Orm\mysql;
 
-$db = mysql([/* config */]);
-$migrator = new Migrator($db, './migrations');
+$dm = mysql([/* config */]);
+$migrator = new Migrator($dm, './migrations');
 
 // Run migrations
 $applied = $migrator->migrate();
@@ -594,23 +594,23 @@ $posts_relations = define_relations($posts, function($r) use ($users, $posts, $c
 
 ```php
 // find_many() - Get multiple records with relations
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with(['posts' => true])
     ->find_many();
 
 // find_first() - Get first matching record
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->where(eq($users->id, 1))
     ->with(['posts' => true, 'comments' => true])
     ->find_first();
 
 // find() - Get by primary key
-$user = $db->query_table($users)
+$user = $dm->query_table($users)
     ->with(['posts' => true])
     ->find(1);
 
 // Nested relations
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with([
         'posts' => [
             'with' => ['comments' => true]  // Load comments for each post
@@ -622,7 +622,7 @@ $users = $db->query_table($users)
 ### Filtered and Ordered Relations
 
 ```php
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with([
         'posts' => [
             'where' => eq($posts->published, true),
@@ -636,7 +636,7 @@ $users = $db->query_table($users)
 ### Relation Aliases
 
 ```php
-$posts = $db->query_table($posts)
+$posts = $dm->query_table($posts)
     ->with([
         'writer:author' => true,  // Load 'author' relation as 'writer'
     ])
@@ -667,7 +667,7 @@ $posts_relations = define_relations($posts, function($r) use ($posts, $tags, $po
 });
 
 // Query posts with tags
-$posts = $db->query_table($posts)->with(['tags' => true])->find_many();
+$posts = $dm->query_table($posts)->with(['tags' => true])->find_many();
 ```
 
 ### Polymorphic Relations
@@ -708,7 +708,7 @@ $posts_relations = define_relations($posts, function($r) use ($posts, $comments)
 });
 
 // Query with polymorphic relations
-$comments = $db->query_table($comments)
+$comments = $dm->query_table($comments)
     ->with(['commentable' => true])
     ->find_many();
 ```
@@ -717,14 +717,14 @@ $comments = $db->query_table($comments)
 
 ```php
 // Shorthand for common patterns
-$users = $db->find_many($users, [
+$users = $dm->find_many($users, [
     'where' => eq($users->is_active, true),
     'with' => ['posts' => true],
     'order_by' => desc($users->id),
     'limit' => 20,
 ]);
 
-$user = $db->find_first($users, [
+$user = $dm->find_first($users, [
     'where' => eq($users->id, 1),
     'with' => ['profile' => true, 'posts' => true],
 ]);
@@ -740,10 +740,10 @@ Without eager loading, accessing related data in a loop causes the "N+1 problem"
 
 ```php
 // BAD: N+1 queries (1 query for users + N queries for posts)
-$users = $db->query_table($users)->find_many();  // 1 query
+$users = $dm->query_table($users)->find_many();  // 1 query
 foreach ($users as $user) {
     // Each iteration triggers a separate query!
-    $posts = $db->query_table($posts)
+    $posts = $dm->query_table($posts)
         ->where(eq($posts->author_id, $user['id']))
         ->find_many();  // N queries
 }
@@ -755,7 +755,7 @@ Eager loading fetches all related data in optimized batch queries:
 
 ```php
 // GOOD: 2 queries total (1 for users + 1 for all their posts)
-$users = $db->query_table($users)
+$users = $dm->query_table($users)
     ->with(['posts' => true])
     ->find_many();
 
@@ -778,7 +778,7 @@ foreach ($users as $user) {
 
 ```php
 // Example: Blog posts list with authors and comment counts
-$posts = $db->query_table($posts)
+$posts = $dm->query_table($posts)
     ->with([
         'author' => true,
         'comments' => true,
@@ -800,11 +800,11 @@ $posts = $db->query_table($posts)
 
 ```php
 // Example: Only load comments if user wants to see them
-$post = $db->query_table($posts)->find(1);
+$post = $dm->query_table($posts)->find(1);
 
 if ($showComments) {
     // Load comments only when needed
-    $comments = $db->query_table($comments)
+    $comments = $dm->query_table($comments)
         ->where(eq($comments->post_id, $post['id']))
         ->order_by(desc($comments->created_at))
         ->find_many();
@@ -839,7 +839,7 @@ if ($showComments) {
    // Process users in batches
    $page = 0;
    do {
-       $users = $db->query_table($users)
+       $users = $dm->query_table($users)
            ->with(['profile' => true])
            ->limit(100)
            ->offset($page * 100)
@@ -884,10 +884,10 @@ class UserRow extends ActiveRow
 }
 
 // Setup persistence (once at bootstrap)
-UserRow::set_persistence($db, $users_table);
+UserRow::set_persistence($dm, $users_table);
 
 // Wrap query results
-$users = UserRow::wrap_many($db->select()->from($users)->execute());
+$users = UserRow::wrap_many($dm->select()->from($users)->execute());
 
 // Or use static finders
 $user = UserRow::find(1);
@@ -1183,13 +1183,13 @@ For complete documentation including Schema.org examples, polymorphic contributi
 
 ```php
 // Select all columns
-$results = $db->select()->from($users)->execute();
+$results = $dm->select()->from($users)->execute();
 
 // Select specific columns
-$results = $db->select([$users->id, $users->name])->from($users)->execute();
+$results = $dm->select([$users->id, $users->name])->from($users)->execute();
 
 // With WHERE, ORDER BY, LIMIT, OFFSET
-$results = $db->select()
+$results = $dm->select()
     ->from($users)
     ->where(eq($users->is_active, true))
     ->order_by(desc($users->created_at))
@@ -1202,19 +1202,19 @@ $results = $db->select()
 
 ```php
 // Single record
-$db->insert($users)->values([
+$dm->insert($users)->values([
     'name'  => 'Alice',
     'email' => 'alice@example.com',
 ])->execute();
 
 // Multiple records
-$db->insert($users)->values([
+$dm->insert($users)->values([
     ['name' => 'Bob', 'email' => 'bob@example.com'],
     ['name' => 'Charlie', 'email' => 'charlie@example.com'],
 ])->execute();
 
 // With RETURNING (PostgreSQL/SQLite)
-$inserted = $db->insert($users)
+$inserted = $dm->insert($users)
     ->values(['name' => 'Dave', 'email' => 'dave@example.com'])
     ->returning($users->id)
     ->execute();
@@ -1224,7 +1224,7 @@ $inserted = $db->insert($users)
 
 ```php
 // ON CONFLICT DO UPDATE (PostgreSQL/SQLite)
-$db->insert($users)
+$dm->insert($users)
     ->values(['name' => 'Alice', 'email' => 'alice@example.com', 'age' => 30])
     ->on_conflict_do_update(['email'], [
         'name' => 'Alice Updated',
@@ -1233,7 +1233,7 @@ $db->insert($users)
     ->execute();
 
 // ON CONFLICT DO NOTHING
-$db->insert($users)
+$dm->insert($users)
     ->values(['name' => 'Alice', 'email' => 'alice@example.com'])
     ->on_conflict_do_nothing(['email'])
     ->execute();
@@ -1244,7 +1244,7 @@ $db->insert($users)
 ### UPDATE
 
 ```php
-$db->update($users)
+$dm->update($users)
     ->set(['name' => 'Updated Name', 'is_active' => false])
     ->where(eq($users->id, 1))
     ->execute();
@@ -1253,7 +1253,7 @@ $db->update($users)
 ### DELETE
 
 ```php
-$db->delete($users)
+$dm->delete($users)
     ->where(eq($users->id, 1))
     ->execute();
 ```
@@ -1266,22 +1266,22 @@ $db->delete($users)
 use function Italix\Orm\Operators\{eq, ne, gt, gte, lt, lte};
 
 // Equal (=)
-$db->select()->from($users)->where(eq($users->name, 'Alice'))->execute();
+$dm->select()->from($users)->where(eq($users->name, 'Alice'))->execute();
 
 // Not equal (<>)
-$db->select()->from($users)->where(ne($users->status, 'inactive'))->execute();
+$dm->select()->from($users)->where(ne($users->status, 'inactive'))->execute();
 
 // Greater than (>)
-$db->select()->from($users)->where(gt($users->age, 18))->execute();
+$dm->select()->from($users)->where(gt($users->age, 18))->execute();
 
 // Greater than or equal (>=)
-$db->select()->from($users)->where(gte($users->salary, 50000))->execute();
+$dm->select()->from($users)->where(gte($users->salary, 50000))->execute();
 
 // Less than (<)
-$db->select()->from($users)->where(lt($users->age, 65))->execute();
+$dm->select()->from($users)->where(lt($users->age, 65))->execute();
 
 // Less than or equal (<=)
-$db->select()->from($users)->where(lte($users->attempts, 3))->execute();
+$dm->select()->from($users)->where(lte($users->attempts, 3))->execute();
 ```
 
 ### Logical Operators
@@ -1290,7 +1290,7 @@ $db->select()->from($users)->where(lte($users->attempts, 3))->execute();
 use function Italix\Orm\Operators\{and_, or_, not_};
 
 // AND
-$db->select()->from($users)->where(
+$dm->select()->from($users)->where(
     and_(
         gte($users->age, 18),
         eq($users->is_active, true)
@@ -1298,7 +1298,7 @@ $db->select()->from($users)->where(
 )->execute();
 
 // OR
-$db->select()->from($users)->where(
+$dm->select()->from($users)->where(
     or_(
         eq($users->role, 'admin'),
         eq($users->role, 'moderator')
@@ -1306,12 +1306,12 @@ $db->select()->from($users)->where(
 )->execute();
 
 // NOT
-$db->select()->from($users)->where(
+$dm->select()->from($users)->where(
     not_(eq($users->status, 'banned'))
 )->execute();
 
 // Complex combinations
-$db->select()->from($users)->where(
+$dm->select()->from($users)->where(
     and_(
         gte($users->age, 18),
         or_(
@@ -1328,16 +1328,16 @@ $db->select()->from($users)->where(
 use function Italix\Orm\Operators\{like, not_like, ilike, not_ilike};
 
 // LIKE
-$db->select()->from($users)->where(like($users->name, 'A%'))->execute();
+$dm->select()->from($users)->where(like($users->name, 'A%'))->execute();
 
 // NOT LIKE
-$db->select()->from($users)->where(not_like($users->email, '%@spam.com'))->execute();
+$dm->select()->from($users)->where(not_like($users->email, '%@spam.com'))->execute();
 
 // ILIKE (case-insensitive, PostgreSQL native, emulated on others)
-$db->select()->from($users)->where(ilike($users->name, 'alice'))->execute();
+$dm->select()->from($users)->where(ilike($users->name, 'alice'))->execute();
 
 // NOT ILIKE
-$db->select()->from($users)->where(not_ilike($users->name, 'bob'))->execute();
+$dm->select()->from($users)->where(not_ilike($users->name, 'bob'))->execute();
 ```
 
 ### Range Operators
@@ -1346,16 +1346,16 @@ $db->select()->from($users)->where(not_ilike($users->name, 'bob'))->execute();
 use function Italix\Orm\Operators\{between, not_between, in_array, not_in_array};
 
 // BETWEEN
-$db->select()->from($users)->where(between($users->age, 18, 65))->execute();
+$dm->select()->from($users)->where(between($users->age, 18, 65))->execute();
 
 // NOT BETWEEN
-$db->select()->from($users)->where(not_between($users->salary, 0, 30000))->execute();
+$dm->select()->from($users)->where(not_between($users->salary, 0, 30000))->execute();
 
 // IN
-$db->select()->from($users)->where(in_array($users->status, ['active', 'pending']))->execute();
+$dm->select()->from($users)->where(in_array($users->status, ['active', 'pending']))->execute();
 
 // NOT IN
-$db->select()->from($users)->where(not_in_array($users->role, ['banned', 'suspended']))->execute();
+$dm->select()->from($users)->where(not_in_array($users->role, ['banned', 'suspended']))->execute();
 ```
 
 ### NULL Operators
@@ -1364,10 +1364,10 @@ $db->select()->from($users)->where(not_in_array($users->role, ['banned', 'suspen
 use function Italix\Orm\Operators\{is_null, is_not_null};
 
 // IS NULL
-$db->select()->from($users)->where(is_null($users->deleted_at))->execute();
+$dm->select()->from($users)->where(is_null($users->deleted_at))->execute();
 
 // IS NOT NULL
-$db->select()->from($users)->where(is_not_null($users->email_verified_at))->execute();
+$dm->select()->from($users)->where(is_not_null($users->email_verified_at))->execute();
 ```
 
 ### Ordering
@@ -1376,19 +1376,19 @@ $db->select()->from($users)->where(is_not_null($users->email_verified_at))->exec
 use function Italix\Orm\Operators\{asc, desc, raw};
 
 // ASC
-$db->select()->from($users)->order_by(asc($users->name))->execute();
+$dm->select()->from($users)->order_by(asc($users->name))->execute();
 
 // DESC
-$db->select()->from($users)->order_by(desc($users->created_at))->execute();
+$dm->select()->from($users)->order_by(desc($users->created_at))->execute();
 
 // Multiple columns
-$db->select()->from($users)->order_by(
+$dm->select()->from($users)->order_by(
     desc($users->is_premium),
     asc($users->name)
 )->execute();
 
 // Order by expression
-$db->select()->from($users)->order_by(desc(raw('total')))->execute();
+$dm->select()->from($users)->order_by(desc(raw('total')))->execute();
 ```
 
 ## Aggregate Functions
@@ -1397,22 +1397,22 @@ $db->select()->from($users)->order_by(desc(raw('total')))->execute();
 use function Italix\Orm\Operators\{sql_count, sql_sum, sql_avg, sql_min, sql_max, sql_count_distinct};
 
 // COUNT(*)
-$db->select([sql_count()])->from($users)->execute();
+$dm->select([sql_count()])->from($users)->execute();
 
 // COUNT with column (excludes nulls)
-$db->select([sql_count($users->age)])->from($users)->execute();
+$dm->select([sql_count($users->age)])->from($users)->execute();
 
 // COUNT DISTINCT
-$db->select([sql_count_distinct($users->country)])->from($users)->execute();
+$dm->select([sql_count_distinct($users->country)])->from($users)->execute();
 
 // SUM
-$db->select([sql_sum($users->salary)->as('total_salary')])->from($users)->execute();
+$dm->select([sql_sum($users->salary)->as('total_salary')])->from($users)->execute();
 
 // AVG
-$db->select([sql_avg($users->age)->as('average_age')])->from($users)->execute();
+$dm->select([sql_avg($users->age)->as('average_age')])->from($users)->execute();
 
 // MIN / MAX
-$db->select([
+$dm->select([
     sql_min($users->age)->as('youngest'),
     sql_max($users->age)->as('oldest')
 ])->from($users)->execute();
@@ -1422,13 +1422,13 @@ $db->select([
 
 ```php
 // GROUP BY
-$db->select([$orders->product, sql_count()->as('cnt'), sql_sum($orders->amount)->as('total')])
+$dm->select([$orders->product, sql_count()->as('cnt'), sql_sum($orders->amount)->as('total')])
     ->from($orders)
     ->group_by($orders->product)
     ->execute();
 
 // GROUP BY with HAVING
-$db->select([$orders->product, sql_sum($orders->amount)->as('total')])
+$dm->select([$orders->product, sql_sum($orders->amount)->as('total')])
     ->from($orders)
     ->group_by($orders->product)
     ->having(gte(raw('total'), 1000))
@@ -1439,32 +1439,32 @@ $db->select([$orders->product, sql_sum($orders->amount)->as('total')])
 
 ```php
 // INNER JOIN
-$db->select([$users->name, $orders->product])
+$dm->select([$users->name, $orders->product])
     ->from($users)
     ->inner_join($orders, eq($users->id, $orders->user_id))
     ->execute();
 
 // LEFT JOIN
-$db->select([$users->name, sql_count($orders->id)->as('order_count')])
+$dm->select([$users->name, sql_count($orders->id)->as('order_count')])
     ->from($users)
     ->left_join($orders, eq($users->id, $orders->user_id))
     ->group_by($users->id)
     ->execute();
 
 // RIGHT JOIN
-$db->select([$users->name, $orders->product])
+$dm->select([$users->name, $orders->product])
     ->from($orders)
     ->right_join($users, eq($users->id, $orders->user_id))
     ->execute();
 
 // FULL OUTER JOIN
-$db->select([$users->name, $orders->product])
+$dm->select([$users->name, $orders->product])
     ->from($users)
     ->full_join($orders, eq($users->id, $orders->user_id))
     ->execute();
 
 // CROSS JOIN
-$db->select([$products->name, $colors->name])
+$dm->select([$products->name, $colors->name])
     ->from($products)
     ->cross_join($colors)
     ->execute();
@@ -1474,19 +1474,19 @@ $db->select([$products->name, $colors->name])
 
 ```php
 // Manual transaction
-$db->begin_transaction();
+$dm->begin_transaction();
 try {
-    $db->insert($users)->values(['name' => 'Test'])->execute();
-    $db->commit();
+    $dm->insert($users)->values(['name' => 'Test'])->execute();
+    $dm->commit();
 } catch (Exception $e) {
-    $db->rollback();
+    $dm->rollback();
     throw $e;
 }
 
 // Using callback
-$result = $db->transaction(function($db) use ($users) {
-    $db->insert($users)->values(['name' => 'Test'])->execute();
-    return $db->last_insert_id();
+$result = $dm->transaction(function($dm) use ($users) {
+    $dm->insert($users)->values(['name' => 'Test'])->execute();
+    return $dm->last_insert_id();
 });
 ```
 
@@ -1496,16 +1496,16 @@ $result = $db->transaction(function($db) use ($users) {
 use function Italix\Orm\Operators\raw;
 
 // Execute raw SQL
-$db->execute('UPDATE users SET status = ? WHERE id = ?', ['active', 1]);
+$dm->execute('UPDATE users SET status = ? WHERE id = ?', ['active', 1]);
 
 // Query with results
-$results = $db->query('SELECT * FROM users WHERE status = ?', ['active']);
+$results = $dm->query('SELECT * FROM users WHERE status = ?', ['active']);
 
 // Single result
-$user = $db->query_one('SELECT * FROM users WHERE id = ?', [1]);
+$user = $dm->query_one('SELECT * FROM users WHERE id = ?', [1]);
 
 // Raw expressions in queries
-$db->select([raw('COUNT(*) as total')])->from($users)->execute();
+$dm->select([raw('COUNT(*) as total')])->from($users)->execute();
 ```
 
 ## Custom SQL with sql() Builder
@@ -1516,29 +1516,29 @@ The `sql()` method provides a powerful way to write custom SQL while maintaining
 
 ```php
 // Simple parameterized query
-$users = $db->sql('SELECT * FROM users WHERE id = ?', [$userId])->all();
+$users = $dm->sql('SELECT * FROM users WHERE id = ?', [$userId])->all();
 
 // Multiple parameters
-$users = $db->sql(
+$users = $dm->sql(
     'SELECT * FROM users WHERE status = ? AND age > ?',
     ['active', 18]
 )->all();
 
 // Get single result
-$user = $db->sql('SELECT * FROM users WHERE email = ?', [$email])->one();
+$user = $dm->sql('SELECT * FROM users WHERE email = ?', [$email])->one();
 
 // Get scalar value
-$count = $db->sql('SELECT COUNT(*) FROM users')->scalar();
+$count = $dm->sql('SELECT COUNT(*) FROM users')->scalar();
 
 // Execute and get affected rows
-$affected = $db->sql('UPDATE users SET status = ? WHERE id = ?', ['active', $id])->row_count();
+$affected = $dm->sql('UPDATE users SET status = ? WHERE id = ?', ['active', $id])->row_count();
 ```
 
 ### Fluent Builder
 
 ```php
 // Build SQL piece by piece with safe identifier quoting
-$users = $db->sql()
+$users = $dm->sql()
     ->append('SELECT * FROM ')
     ->identifier('users')           // Safely quoted: `users` or "users"
     ->append(' WHERE ')
@@ -1552,7 +1552,7 @@ $users = $db->sql()
     ->all();
 
 // Using Column and Table objects
-$users = $db->sql()
+$users = $dm->sql()
     ->append('SELECT ')
     ->column($users->name)
     ->append(', ')
@@ -1566,14 +1566,14 @@ $users = $db->sql()
 
 ```php
 // Multiple values at once
-$db->sql()
+$dm->sql()
     ->append('INSERT INTO users (name, email, age) VALUES (')
     ->values(['Alice', 'alice@test.com', 25])  // Creates: ?, ?, ?
     ->append(')')
     ->execute();
 
 // IN clause
-$users = $db->sql()
+$users = $dm->sql()
     ->append('SELECT * FROM users WHERE status ')
     ->in(['active', 'pending', 'verified'])    // Creates: IN (?, ?, ?)
     ->all();
@@ -1582,7 +1582,7 @@ $users = $db->sql()
 $minAge = 18;
 $maxAge = null;
 
-$users = $db->sql()
+$users = $dm->sql()
     ->append('SELECT * FROM users WHERE 1=1')
     ->when($minAge !== null, ' AND age >= ?', [$minAge])
     ->when($maxAge !== null, ' AND age <= ?', [$maxAge])
@@ -1601,7 +1601,7 @@ $wherePart = sql(' WHERE salary > ?', [50000]);
 $orderPart = sql(' ORDER BY salary DESC');
 
 // Merge fragments together
-$results = $db->sql()
+$results = $dm->sql()
     ->merge($selectPart)
     ->merge($fromPart)
     ->merge($wherePart)
@@ -1609,7 +1609,7 @@ $results = $db->sql()
     ->all();
 
 // Join multiple parts
-$db->sql()
+$dm->sql()
     ->join([
         sql('SELECT * FROM users'),
         sql(' WHERE active = ?', [true]),
@@ -1653,7 +1653,7 @@ $param = Sql::param($userId);  // Creates: ? with bound value
 ### Inspecting Generated SQL
 
 ```php
-$query = $db->sql()
+$query = $dm->sql()
     ->append('SELECT * FROM users WHERE status = ')
     ->value('active')
     ->append(' AND age > ')

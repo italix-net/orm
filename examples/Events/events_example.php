@@ -55,18 +55,18 @@ echo "   Created " . count($schema->get_tables()) . " tables: " .
     implode(', ', array_map(fn($t) => $t->get_name(), $schema->get_tables())) . "\n";
 
 // Setup persistence for all model classes
-Thing::set_persistence($dm, $schema->things);
-Person::set_persistence($dm, $schema->persons);
-Organization::set_persistence($dm, $schema->organizations);
-Place::set_persistence($dm, $schema->places);
-LocalBusiness::set_persistence($dm, $schema->local_businesses);
-PostalAddress::set_persistence($dm, $schema->postal_addresses);
-Course::set_persistence($dm, $schema->courses);
-Event::set_persistence($dm, $schema->events);
-DanceEvent::set_persistence($dm, $schema->dance_events);
-MusicEvent::set_persistence($dm, $schema->music_events);
-CourseInstance::set_persistence($dm, $schema->course_instances);
-Participation::set_persistence($dm, $schema->participations);
+Thing::set_persistence($dm, $schema->thing);
+Person::set_persistence($dm, $schema->person);
+Organization::set_persistence($dm, $schema->organization);
+Place::set_persistence($dm, $schema->place);
+LocalBusiness::set_persistence($dm, $schema->local_business);
+PostalAddress::set_persistence($dm, $schema->postal_address);
+Course::set_persistence($dm, $schema->course);
+Event::set_persistence($dm, $schema->event);
+DanceEvent::set_persistence($dm, $schema->dance_event);
+MusicEvent::set_persistence($dm, $schema->music_event);
+CourseInstance::set_persistence($dm, $schema->course_instance);
+Participation::set_persistence($dm, $schema->participation);
 
 echo "   Models configured\n\n";
 

@@ -77,18 +77,18 @@ class EventsTestRunner
 
         $this->dm->create_tables(...$this->schema->get_tables());
 
-        Thing::set_persistence($this->dm, $this->schema->things);
-        Person::set_persistence($this->dm, $this->schema->persons);
-        Organization::set_persistence($this->dm, $this->schema->organizations);
-        Place::set_persistence($this->dm, $this->schema->places);
-        LocalBusiness::set_persistence($this->dm, $this->schema->local_businesses);
-        PostalAddress::set_persistence($this->dm, $this->schema->postal_addresses);
-        Course::set_persistence($this->dm, $this->schema->courses);
-        Event::set_persistence($this->dm, $this->schema->events);
-        DanceEvent::set_persistence($this->dm, $this->schema->dance_events);
-        MusicEvent::set_persistence($this->dm, $this->schema->music_events);
-        CourseInstance::set_persistence($this->dm, $this->schema->course_instances);
-        Participation::set_persistence($this->dm, $this->schema->participations);
+        Thing::set_persistence($this->dm, $this->schema->thing);
+        Person::set_persistence($this->dm, $this->schema->person);
+        Organization::set_persistence($this->dm, $this->schema->organization);
+        Place::set_persistence($this->dm, $this->schema->place);
+        LocalBusiness::set_persistence($this->dm, $this->schema->local_business);
+        PostalAddress::set_persistence($this->dm, $this->schema->postal_address);
+        Course::set_persistence($this->dm, $this->schema->course);
+        Event::set_persistence($this->dm, $this->schema->event);
+        DanceEvent::set_persistence($this->dm, $this->schema->dance_event);
+        MusicEvent::set_persistence($this->dm, $this->schema->music_event);
+        CourseInstance::set_persistence($this->dm, $this->schema->course_instance);
+        Participation::set_persistence($this->dm, $this->schema->participation);
     }
 
     private function teardown(): void

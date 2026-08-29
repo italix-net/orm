@@ -5,26 +5,18 @@
     "keywords": [
         "orm",
         "database",
+        "migrations",
+        "query-builder",
         "mysql",
         "postgresql",
         "sqlite",
-        "supabase",
-        "query-builder",
-        "migrations",
-        "schema",
-        "pdo",
-        "relations",
-        "eager-loading",
-        "drizzle",
-        "forms",
-        "form-integration",
-        "delegated-types"
+        "supabase"
     ],
     "bin": [
         "bin/ix"
     ],
     "homepage": "https://github.com/italix-net/orm",
-    "license": "Apache-2.0",
+    "license": "MPL-2.0",
     "authors": [
         {
             "name": "Italix",
@@ -48,19 +40,6 @@
     "autoload": {
         "psr-4": {
             "Italix\\Orm\\": "src/"
-        },
-        "files": [
-            "src/functions.php",
-            "src/Schema/ColumnTypes.php",
-            "src/Schema/PolymorphicColumn.php",
-            "src/Operators/Operators.php",
-            "src/Relations/functions.php",
-            "src/ActiveRow/functions.php"
-        ]
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "Italix\\Orm\\Tests\\": "tests/"
         }
     },
     "scripts": {

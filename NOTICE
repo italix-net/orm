@@ -2,7 +2,13 @@ Italix ORM
 
 Copyright (C) 2026 Italix Sas di Andrea Sivieri e soci
 
-This product includes software developed at Italix.
+Licensed under the Mozilla Public License, Version 2.0. See LICENSE.
+
+(This library was released under the Apache License 2.0 through version 1.1.1.
+Releases already made under that licence stay under it; the change applies from
+the next version onwards. NOTICE is an Apache-2.0 mechanism rather than an MPL
+one, and is kept because the acknowledgement below is worth keeping whatever
+the licence.)
 
 ================================================================================
 

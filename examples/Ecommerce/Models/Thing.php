@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Thing Model (Base Class)
  *
@@ -148,9 +153,9 @@ class Thing extends ActiveRow
 
         // Auto-generate variant name from parent + attributes
         if (!isset($thing_data['name'])) {
-            $parentProduct = $product_group->delegate();
-            $variantDesc = self::build_variant_description($variant_attrs, $parentProduct);
-            $thing_data['name'] = $product_group['name'] . ' - ' . $variantDesc;
+            $parent_product = $product_group->delegate();
+            $variant_desc = self::build_variant_description($variant_attrs, $parent_product);
+            $thing_data['name'] = $product_group['name'] . ' - ' . $variant_desc;
         }
 
         return static::create_product_variant($product_group, $thing_data, $product_data);
@@ -163,12 +168,12 @@ class Thing extends ActiveRow
      * @param Product|null $parentProduct Parent product (to get varies_by order)
      * @return string
      */
-    private static function build_variant_description(array $attrs, ?Product $parentProduct = null): string
+    private static function build_variant_description(array $attrs, ?Product $parent_product = null): string
     {
         // Use varies_by order if available
-        if ($parentProduct && method_exists($parentProduct, 'varies_by')) {
+        if ($parent_product && method_exists($parent_product, 'varies_by')) {
             $ordered = [];
-            foreach ($parentProduct->varies_by() as $attr) {
+            foreach ($parent_product->varies_by() as $attr) {
                 if (isset($attrs[$attr])) {
                     $ordered[] = $attrs[$attr];
                 }
@@ -237,8 +242,8 @@ class Thing extends ActiveRow
 
         // Auto-generate order name if not provided
         if (!isset($thing_data['name'])) {
-            $orderNumber = $order_data['order_number'] ?? 'ORD-' . time();
-            $thing_data['name'] = "Order {$orderNumber}";
+            $order_number = $order_data['order_number'] ?? 'ORD-' . time();
+            $thing_data['name'] = "Order {$order_number}";
         }
 
         return static::create_order($thing_data, $order_data);

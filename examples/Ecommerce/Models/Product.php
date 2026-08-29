@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Product Model (Delegate)
  *
@@ -248,14 +253,14 @@ class Product extends ActiveRow
             return [];
         }
 
-        $parentProduct = $parent->delegate();
-        if (!$parentProduct instanceof self) {
+        $parent_product = $parent->delegate();
+        if (!$parent_product instanceof self) {
             return [];
         }
 
-        $thingId = $this['thing_id'];
-        return array_filter($parentProduct->variants(), function (Thing $variant) use ($thingId) {
-            return $variant['id'] !== $thingId;
+        $thing_id = $this['thing_id'];
+        return array_filter($parent_product->variants(), function (Thing $variant) use ($thing_id) {
+            return $variant['id'] !== $thing_id;
         });
     }
 
@@ -313,11 +318,11 @@ class Product extends ActiveRow
      * @param array $options Additional options (discount, optional, etc.)
      * @return void
      */
-    public function add_bundle_item(int $productThingId, int $quantity = 1, array $options = []): void
+    public function add_bundle_item(int $product_thing_id, int $quantity = 1, array $options = []): void
     {
         $items = $this->bundle_items();
         $items[] = array_merge([
-            'product_id' => $productThingId,
+            'product_id' => $product_thing_id,
             'quantity' => $quantity,
         ], $options);
         $this->set_bundle_items($items);
@@ -336,9 +341,9 @@ class Product extends ActiveRow
 
         $products = [];
         foreach ($this->bundle_items() as $item) {
-            $productId = $item['product_id'] ?? null;
-            if ($productId) {
-                $thing = Thing::find_with_delegate($productId);
+            $product_id = $item['product_id'] ?? null;
+            if ($product_id) {
+                $thing = Thing::find_with_delegate($product_id);
                 if ($thing) {
                     $products[] = $thing;
                 }
@@ -361,11 +366,11 @@ class Product extends ActiveRow
 
         $total = 0;
         foreach ($this->bundle_items() as $item) {
-            $productId = $item['product_id'] ?? null;
+            $product_id = $item['product_id'] ?? null;
             $quantity = $item['quantity'] ?? 1;
 
-            if ($productId) {
-                $thing = Thing::find_with_delegate($productId);
+            if ($product_id) {
+                $thing = Thing::find_with_delegate($product_id);
                 if ($thing) {
                     $delegate = $thing->delegate();
                     if ($delegate instanceof self) {
@@ -586,9 +591,9 @@ class Product extends ActiveRow
         // Use varies_by order from parent if available
         $parent = $this->parent_group();
         if ($parent) {
-            $parentProduct = $parent->delegate();
-            if ($parentProduct instanceof self) {
-                foreach ($parentProduct->varies_by() as $attr) {
+            $parent_product = $parent->delegate();
+            if ($parent_product instanceof self) {
+                foreach ($parent_product->varies_by() as $attr) {
                     $value = $this->get_variant_attribute($attr);
                     if ($value !== null) {
                         $parts[] = $value;

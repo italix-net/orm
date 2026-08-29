@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - SQL Builder
  * 
@@ -6,7 +11,7 @@
  * with proper parameter binding to prevent SQL injection.
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -257,7 +262,13 @@ class Sql
     }
 
     /**
-     * Convert to PostgreSQL numbered placeholders ($1, $2, etc.)
+     * Convert to PostgreSQL numbered placeholders (`$1`, `$2`, …).
+     *
+     * **Not for anything executed through PDO**, which is everything in this
+     * package: PDO parses `?` and named placeholders only, so a statement in
+     * this form binds nothing and returns no rows without reporting a problem.
+     * It remains here for code talking to libpq directly (`pg_query_params()`),
+     * which is the only place the form belongs.
      */
     public function to_postgres(): array
     {
@@ -282,14 +293,13 @@ class Sql
             throw new \RuntimeException("No database connection set for SQL execution");
         }
         
-        $query = $this->query;
+        // The `?` placeholders go to PDO as written. Converting them to `$1`
+        // first — which this used to do on PostgreSQL — produces SQL that PDO
+        // cannot bind to: the server receives a parameter nobody set and answers
+        // with no rows and no error.
+        $query  = $this->query;
         $params = $this->params;
-        
-        // Convert to PostgreSQL placeholders if needed
-        if ($this->dialect === 'postgresql') {
-            [$query, $params] = $this->to_postgres();
-        }
-        
+
         $stmt = $this->connection->prepare($query);
         $stmt->execute($params);
         return $stmt;

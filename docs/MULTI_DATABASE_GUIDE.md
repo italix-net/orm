@@ -45,7 +45,7 @@ While Italix ORM abstracts many differences, understanding the underlying variat
 // ✅ USE: Portable alternatives
 'id' => integer()->primary_key()->auto_increment()
 'flags' => integer()
-'data' => text()                    // JSON encode/decode in application
+'data' => text()->cast_as('array')  // JSON encode/decode handled automatically — see "Attribute casting" in the main README
 ```
 
 ### 2. UNSIGNED Integers
@@ -66,36 +66,41 @@ protected function before_save_validate_count(): void
 }
 ```
 
-### 3. ENUM Types
+### 3. ENUM Types — outdated advice, corrected
+
+This used to recommend avoiding `enum()` and hand-rolling a `VARCHAR` plus application-level
+validation instead. That advice predates `enum()` becoming a first-class, dialect-portable schema
+type (since 2.23.0) and is now backwards — `enum()` **is** the portable alternative, not the thing to
+avoid:
 
 ```php
-// ❌ AVOID: ENUM (syntax varies between databases)
-'status' => enum(['draft', 'published', 'archived'])
-
-// ✅ USE: VARCHAR with application-level validation
-'status' => varchar(20)->not_null()->default('draft')
-
-// Define constants in your row class
-class PostRow extends ActiveRow
-{
-    const STATUS_DRAFT = 'draft';
-    const STATUS_PUBLISHED = 'published';
-    const STATUS_ARCHIVED = 'archived';
-
-    const VALID_STATUSES = [
-        self::STATUS_DRAFT,
-        self::STATUS_PUBLISHED,
-        self::STATUS_ARCHIVED,
-    ];
-
-    protected function before_save_validate_status(): void
-    {
-        if (!in_array($this['status'], self::VALID_STATUSES)) {
-            throw new \InvalidArgumentException('Invalid status');
-        }
-    }
-}
+// ✅ USE: enum() — renders correctly on every dialect, enforced by the server itself
+'status' => enum(['draft', 'published', 'archived'])->not_null()->default('draft')
 ```
+
+Native `ENUM(...)` on MySQL; `VARCHAR(255)` plus a `CHECK (col IN (...))` carrying the same values on
+PostgreSQL and SQLite, built on `check()` rather than a second mechanism — enforced identically to a
+hand-written one, not merely rendered and hoped for (`CheckAndEnumTest.php` proves it by inserting a
+value outside the list and watching the server refuse it, on all three dialects). No hand-written
+`VALID_STATUSES` array or `before_save_validate_status()` override needed — the database is already
+the single source of truth for which values are legal, the same as any other constraint.
+
+**A native PHP `BackedEnum` is even better when the values are also meaningful in PHP code**, not
+only in the database:
+
+```php
+enum PostStatus: string
+{
+    case Draft     = 'draft';
+    case Published = 'published';
+    case Archived  = 'archived';
+}
+
+'status' => enum(PostStatus::class)->not_null()->default('draft'),
+```
+
+Reading the row back gives a real `PostStatus` instance (`$post['status'] === PostStatus::Published`),
+not a bare string to compare by hand — see "Attribute casting" in the main README.
 
 ### 4. Reserved Words as Identifiers
 
@@ -724,7 +729,10 @@ Before deploying a multi-database application, verify:
 - [ ] Using `boolean()` for true/false values
 - [ ] Using `timestamp()` or `text()` for dates
 - [ ] Using `text()` for JSON data
-- [ ] No ENUM types (use VARCHAR + validation)
+- [ ] `enum()` for a fixed value set — safe and portable on all three dialects (native `ENUM` on
+      MySQL, `VARCHAR` + `CHECK` elsewhere, enforced identically); no reason to hand-roll it anymore
+- [ ] `Table::fulltext()` for full-text search rather than a dialect-specific `MATCH()`/`to_tsvector()`
+      written by hand — it already renders correctly per dialect, SQLite's FTS5 included
 - [ ] No UNSIGNED integers
 - [ ] No reserved words as table/column names
 - [ ] Consistent snake_case naming

@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow\Traits;
 
@@ -209,11 +214,11 @@ trait HasSlug
      * @param int $suffix
      * @return string
      */
-    public function unique_slug(string $baseSlug, int $suffix = 0): string
+    public function unique_slug(string $base_slug, int $suffix = 0): string
     {
         if ($suffix === 0) {
-            return $baseSlug;
+            return $base_slug;
         }
-        return $baseSlug . '-' . $suffix;
+        return $base_slug . '-' . $suffix;
     }
 }

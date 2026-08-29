@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 /**
  * ActiveRow Test Suite
@@ -11,7 +16,26 @@
  * - Wrapping and unwrapping
  */
 
-require_once __DIR__ . '/../src/autoload.php';
+// The autoloader, wherever this package happens to sit. Composer first, because
+// `Italix\Contracts` is a real dependency and Composer is what resolves it; the
+// manual autoloader beside the source is the no-Composer fallback, and it now
+// knows about that namespace too.
+(static function (): void {
+    foreach ([
+        __DIR__ . '/../vendor/autoload.php',               // checked out on its own
+        __DIR__ . '/../../../../../vendor/autoload.php',   // vendored in a project
+        __DIR__ . '/../../../../vendor/autoload.php',      // installed as a package
+        __DIR__ . '/../../../autoload.php',                // sibling autoloader
+    ] as $autoload) {
+        if (is_file($autoload)) {
+            require_once $autoload;
+
+            return;
+        }
+    }
+
+    require_once __DIR__ . '/../src/autoload.php';
+})();
 require_once __DIR__ . '/../src/ActiveRow/functions.php';
 
 use Italix\Orm\ActiveRow\ActiveRow;
@@ -81,33 +105,27 @@ class TestOrganizationRow extends ActiveRow
     }
 }
 
-// Test counters
-$tests_passed = 0;
-$tests_failed = 0;
+use function Italix\Testing\{suite, section, test as ix_test, summary};
 
-function test($name, $condition)
+/**
+ * This suite predates the shared runner and calls `test()` a few hundred times
+ * with the signature it has always had. The shim leaves every one of those call
+ * sites untouched and routes the result to `Italix\Testing\Runner`, so the
+ * assertions are counted by `ix test`, appear in the JUnit report, and stop
+ * being printed into a summary only a person reads.
+ *
+ * `(bool)` because the original tested truthiness while the runner takes a bool.
+ */
+function test($name, $condition, $details = ''): void
 {
-    global $tests_passed, $tests_failed;
-    if ($condition) {
-        echo "  [PASS] $name\n";
-        $tests_passed++;
-    } else {
-        echo "  [FAIL] $name\n";
-        $tests_failed++;
-    }
-}
-
-function section($name)
-{
-    echo "\n=== $name ===\n";
+    ix_test((string) $name, (bool) $condition, (string) $details);
 }
 
 // ============================================
 // TESTS
 // ============================================
 
-echo "ActiveRow Test Suite\n";
-echo str_repeat('=', 50) . "\n";
+suite('Italix Orm - ActiveRow');
 
 // ============================================
 section("Basic ActiveRow");
@@ -134,10 +152,10 @@ test("wrap_many() count correct", count($users) === 3);
 test("wrap_many() items are ActiveRow", $users[0] instanceof TestUserRow);
 
 // Test make
-$newUser = TestUserRow::make(['first_name' => 'New']);
-test("make() creates instance", $newUser instanceof TestUserRow);
-test("make() sets data", $newUser['first_name'] === 'New');
-test("make() marks as new", $newUser->is_new() === true);
+$new_user = TestUserRow::make(['first_name' => 'New']);
+test("make() creates instance", $new_user instanceof TestUserRow);
+test("make() sets data", $new_user['first_name'] === 'New');
+test("make() marks as new", $new_user->is_new() === true);
 
 // ============================================
 section("ArrayAccess Implementation");
@@ -271,8 +289,8 @@ $found = TestUserRow::find($user['id']);
 test("find() returns instance", $found instanceof TestUserRow);
 test("find() returns correct data", $found['first_name'] === 'Test');
 
-$notFound = TestUserRow::find(9999);
-test("find() returns null for missing", $notFound === null);
+$not_found = TestUserRow::find(9999);
+test("find() returns null for missing", $not_found === null);
 
 // Update
 $user['first_name'] = 'Updated';
@@ -297,9 +315,9 @@ test("find_one() returns single", $one instanceof TestUserRow);
 test("find_one() filters correctly", $one['first_name'] === 'Updated');
 
 // Delete
-$idToDelete = $user['id'];
+$id_to_delete = $user['id'];
 $user->delete();
-$deleted = TestUserRow::find($idToDelete);
+$deleted = TestUserRow::find($id_to_delete);
 test("delete() removes record", $deleted === null);
 
 // ============================================
@@ -316,10 +334,10 @@ test("updated_at is set", $user['updated_at'] !== null);
 test("get_created_at() works", $user->get_created_at() !== null);
 test("get_updated_at() works", $user->get_updated_at() !== null);
 
-$oldUpdatedAt = $user['updated_at'];
+$old_updated_at = $user['updated_at'];
 sleep(1);
 $user->touch()->save();
-test("touch() updates timestamp", $user['updated_at'] !== $oldUpdatedAt);
+test("touch() updates timestamp", $user['updated_at'] !== $old_updated_at);
 
 test("was_recently_created() works", $user->was_recently_created(60));
 
@@ -417,9 +435,4 @@ test("word_count() works", $post->word_count() === 10);
 // Summary
 // ============================================
 
-echo "\n" . str_repeat('=', 50) . "\n";
-echo "Tests passed: $tests_passed\n";
-echo "Tests failed: $tests_failed\n";
-echo str_repeat('=', 50) . "\n";
-
-exit($tests_failed > 0 ? 1 : 0);
+exit(summary());

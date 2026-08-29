@@ -1,11 +1,16 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Migrator
  * 
  * Core migration engine that handles running, rolling back, and tracking migrations.
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -218,12 +223,8 @@ class Migrator
     protected function run_migration(string $name, string $file, string $direction, ?int $batch = null): void
     {
         require_once $file;
-        
-        $class_name = $this->file_to_class($file);
-        
-        if (!class_exists($class_name)) {
-            throw new \RuntimeException("Migration class {$class_name} not found in {$file}");
-        }
+
+        $class_name = $this->class_in_file($file);
 
         /** @var Migration $migration */
         $migration = new $class_name();
@@ -375,6 +376,54 @@ class Migrator
     /**
      * Convert filename to class name
      */
+    /**
+     * Find the migration class a file declares, by asking PHP instead of
+     * guessing from the filename.
+     *
+     * Deriving the class name from the file name cannot be made to work. A file
+     * named `033_create_invoices.php` derives `033CreateInvoices`, and a PHP
+     * class name may not begin with a digit — so `class_exists()` is false for
+     * every numbered migration, forever. Stripping the number is not enough
+     * either: `002_create_customers.php` declares `CreateCustomersTable`, and
+     * no rule recovers the `Table` suffix the filename never had.
+     *
+     * So: look at what the file actually declared. This is exact, and it means a
+     * migration may be named anything at all.
+     */
+    protected function class_in_file(string $file): string
+    {
+        $real = realpath($file);
+        $found = [];
+
+        foreach (get_declared_classes() as $class) {
+            if (!is_subclass_of($class, Migration::class)) {
+                continue;
+            }
+
+            $declared_in = (new \ReflectionClass($class))->getFileName();
+
+            if ($declared_in !== false && realpath($declared_in) === $real) {
+                $found[] = $class;
+            }
+        }
+
+        if (count($found) === 1) {
+            return $found[0];
+        }
+
+        if ($found === []) {
+            throw new \RuntimeException(
+                "No class extending Migration was declared in {$file}. "
+                . 'A migration file must declare exactly one.'
+            );
+        }
+
+        throw new \RuntimeException(
+            "{$file} declares " . count($found) . ' migration classes (' . implode(', ', $found) . '). '
+            . 'A migration file must declare exactly one, so the runner knows which to run.'
+        );
+    }
+
     protected function file_to_class(string $file): string
     {
         $name = basename($file, '.php');

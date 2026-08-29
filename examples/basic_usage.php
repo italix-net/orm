@@ -1,11 +1,34 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Basic Usage Example
  * 
  * Run with: php examples/basic_usage.php
  */
 
-require_once __DIR__ . '/../vendor/autoload.php';
+// The autoloader, wherever this package happens to sit. One hardcoded depth
+// works in exactly the arrangement it was written in; a list of candidates
+// works when somebody vendors the package, installs it, or checks it out.
+(static function (): void {
+    foreach ([
+        __DIR__ . '/../vendor/autoload.php',
+        __DIR__ . '/../../vendor/autoload.php',
+        __DIR__ . '/../../../../../vendor/autoload.php',
+        __DIR__ . '/../../../../../../vendor/autoload.php',
+    ] as $autoload) {
+        if (is_file($autoload)) {
+            require_once $autoload;
+
+            return;
+        }
+    }
+
+    require_once __DIR__ . '/../src/autoload.php';
+})();
 
 // If running without Composer autoload, use this instead:
 // require_once __DIR__ . '/../src/functions.php';

@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow\Traits;
 
@@ -91,8 +96,8 @@ trait SoftDeletes
      */
     public function is_deleted(): bool
     {
-        $deletedAt = $this->data[static::$deleted_at_column] ?? null;
-        return $deletedAt !== null;
+        $deleted_at = $this->data[static::$deleted_at_column] ?? null;
+        return $deleted_at !== null;
     }
 
     /**
@@ -161,14 +166,26 @@ trait SoftDeletes
 
         $dm = static::get_dm();
         $table = static::get_table();
-        $pk = static::$primary_key;
 
+        // ->force() matters here specifically: if $table also declares
+        // Table::soft_deletes() (the query-builder-level mechanism), a plain
+        // delete() now compiles to an UPDATE — force_delete() promises a
+        // real one regardless, and would silently stop keeping that promise
+        // without this.
+        //
+        // primary_key_condition() is Persistable's — this trait is only
+        // ever composed alongside it (the method_exists() guard above
+        // assumes as much already), so it is reachable here the same way
+        // any two traits on the same class share their methods.
         $dm->delete($table)
-            ->where(\Italix\Orm\Operators\eq($table->$pk, $this[$pk]))
+            ->force()
+            ->where($this->primary_key_condition($table))
             ->execute();
 
         // Clear the primary key
-        unset($this->data[$pk]);
+        foreach (static::get_key_names() as $pk_col) {
+            unset($this->data[$pk_col]);
+        }
     }
 
     /**
@@ -179,12 +196,12 @@ trait SoftDeletes
      */
     public function was_recently_deleted(int $seconds = 60): bool
     {
-        $deletedAt = $this->get_deleted_at_datetime();
-        if ($deletedAt === null) {
+        $deleted_at = $this->get_deleted_at_datetime();
+        if ($deleted_at === null) {
             return false;
         }
 
-        $diff = (new \DateTime())->getTimestamp() - $deletedAt->getTimestamp();
+        $diff = (new \DateTime())->getTimestamp() - $deleted_at->getTimestamp();
         return $diff <= $seconds;
     }
 
@@ -195,11 +212,11 @@ trait SoftDeletes
      */
     public function time_since_deletion(): ?\DateInterval
     {
-        $deletedAt = $this->get_deleted_at_datetime();
-        if ($deletedAt === null) {
+        $deleted_at = $this->get_deleted_at_datetime();
+        if ($deleted_at === null) {
             return null;
         }
 
-        return $deletedAt->diff(new \DateTime());
+        return $deleted_at->diff(new \DateTime());
     }
 }

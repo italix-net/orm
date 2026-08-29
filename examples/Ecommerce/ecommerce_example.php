@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * E-commerce Example
  *
@@ -21,6 +26,8 @@ use Examples\Ecommerce\Models\Thing;
 use Examples\Ecommerce\Models\Product;
 use Examples\Ecommerce\Models\Order;
 use Examples\Ecommerce\Models\OrderItem;
+use Examples\Ecommerce\Models\Customer;
+use Examples\Ecommerce\Models\Person;
 
 // Autoload example classes
 spl_autoload_register(function ($class) {
@@ -50,6 +57,8 @@ Thing::set_persistence($dm, $schema->things);
 Product::set_persistence($dm, $schema->products);
 Order::set_persistence($dm, $schema->orders);
 OrderItem::set_persistence($dm, $schema->order_items);
+Customer::set_persistence($dm, $schema->customers);
+Person::set_persistence($dm, $schema->persons);
 
 // ============================================================
 // CREATE PRODUCTS
@@ -132,17 +141,27 @@ echo "\n";
 echo "3. Creating an Order\n";
 echo str_repeat('-', 40) . "\n\n";
 
+// The customer is a row of its own, and the order points at it. This example
+// used to pass 'customer_name' and 'shipping_address' straight to create_order()
+// — columns the orders table has never had, so it died on the insert. Nobody
+// noticed because nothing runs the examples.
+$customer = Customer::create_person([
+    'email'           => 'jane.smith@example.com',
+    'telephone'       => '+1-555-987-6543',
+    'customer_number' => 'CUST-10042',
+], [
+    'given_name'  => 'Jane',
+    'family_name' => 'Smith',
+]);
+
 $order = Thing::create_order([
     'name' => 'Order #10042',
     'description' => 'Web store order',
 ], [
     'order_number' => 'ORD-2024-10042',
     'order_status' => Order::STATUS_PROCESSING,
-    'order_date' => date('Y-m-d H:i:s'),
-    'customer_name' => 'Jane Smith',
-    'customer_email' => 'jane.smith@example.com',
-    'shipping_address' => "123 Main Street\nApt 4B\nNew York, NY 10001",
-    'payment_method' => 'CreditCard',
+    'order_date'   => date('Y-m-d H:i:s'),
+    'customer_id'  => $customer['id'],
 ]);
 
 echo "Order: {$order->delegate()['order_number']}\n";

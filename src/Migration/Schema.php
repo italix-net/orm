@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Schema Facade for Migrations
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -11,6 +16,8 @@ declare(strict_types=1);
 namespace Italix\Orm\Migration;
 
 use Italix\Orm\DataManager;
+use Italix\Orm\Schema\MaterializedView;
+use Italix\Orm\Schema\View;
 
 /**
  * Schema facade for database schema operations.
@@ -91,11 +98,39 @@ class Schema
         $callback($blueprint);
         
         $dm = self::get_connection();
-        
+
         // Execute ALTER TABLE statements
         foreach ($blueprint->to_alter_sql() as $sql) {
+            self::assert_alter_is_possible($sql);
             $dm->execute($sql);
         }
+    }
+
+    /**
+     * Refuse a statement this server cannot run, before it becomes a syntax error.
+     *
+     * SQLite grew `ALTER TABLE … DROP COLUMN` in **3.35**. Below that the only
+     * way is to rebuild the table and copy the rows, which is a migration with
+     * data in it — a thing to write on purpose, not to have happen inside a
+     * `Schema::table()` call. The server's own answer is `near "DROP": syntax
+     * error`, which says nothing about any of that.
+     */
+    protected static function assert_alter_is_possible(string $sql): void
+    {
+        if (self::get_dialect() !== 'sqlite' || stripos($sql, 'DROP COLUMN') === false) {
+            return;
+        }
+
+        $version = (string) (self::get_connection()->query('SELECT sqlite_version() AS v')[0]['v'] ?? '0');
+
+        if (version_compare($version, '3.35', '>=')) {
+            return;
+        }
+
+        throw new \RuntimeException(
+            "SQLite {$version} has no ALTER TABLE … DROP COLUMN (3.35 added it), so this migration "
+            . 'cannot run here. Rebuild the table and copy the rows across, where the copy is visible.'
+        );
     }
 
     /**
@@ -149,6 +184,285 @@ class Schema
             self::get_connection()->execute("RENAME TABLE {$from_name} TO {$to_name}");
         } else {
             self::get_connection()->execute("ALTER TABLE {$from_name} RENAME TO {$to_name}");
+        }
+    }
+
+    // =========================================
+    // Views
+    // =========================================
+
+    /**
+     * Create a view.
+     *
+     * The view carries its own dialect; migrations run against one connection,
+     * so a view built for another one is refused rather than rendered wrong.
+     */
+    public static function create_view(View $view): void
+    {
+        self::refuse_materialized($view, 'create_view');
+        self::assert_same_dialect($view);
+        self::get_connection()->execute($view->to_create_sql());
+    }
+
+    /**
+     * Create a view, or redefine it if it is already there.
+     *
+     * SQLite has no `CREATE OR REPLACE VIEW`, so there it takes two statements
+     * — which is why {@see View::to_replace_sql()} returns a list and this runs
+     * all of it.
+     */
+    public static function create_or_replace_view(View $view): void
+    {
+        self::refuse_materialized($view, 'create_or_replace_view');
+        self::assert_same_dialect($view);
+        $dm = self::get_connection();
+
+        foreach ($view->to_replace_sql() as $sql) {
+            $dm->execute($sql);
+        }
+    }
+
+    /**
+     * Drop a view if it exists.
+     *
+     * Takes a name or a {@see View}. `DROP TABLE` will not drop a view and
+     * `DROP VIEW` will not drop a table, on every dialect we support.
+     *
+     * @param View|string $view
+     */
+    public static function drop_view($view): void
+    {
+        if ($view instanceof View) {
+            self::get_connection()->execute($view->to_drop_sql());
+            return;
+        }
+
+        $name = self::quote_identifier($view, self::get_dialect());
+        self::get_connection()->execute("DROP VIEW IF EXISTS {$name}");
+    }
+
+    /**
+     * Does this view exist?
+     *
+     * Asked of the catalogue rather than of `table_exists()`, which answers for
+     * tables — and on some dialects for views too, which is exactly the
+     * ambiguity a migration cannot afford.
+     *
+     * @param View|string $view
+     */
+    public static function has_view($view): bool
+    {
+        // Materialized views live in their own catalogue, so asking pg_views
+        // about one would answer "no" about a view that is plainly there.
+        if ($view instanceof MaterializedView) {
+            return self::has_materialized_view($view);
+        }
+
+        $name    = $view instanceof View ? $view->get_name() : $view;
+        $dialect = self::get_dialect();
+        $dm      = self::get_connection();
+
+        if ($dialect === 'sqlite') {
+            $sql = "SELECT name FROM sqlite_master WHERE type = 'view' AND name = ?";
+        } elseif ($dialect === 'mysql') {
+            $sql = 'SELECT table_name FROM information_schema.views '
+                . 'WHERE table_schema = DATABASE() AND table_name = ?';
+        } else {
+            $sql = 'SELECT viewname FROM pg_views '
+                . 'WHERE viewname = ? AND schemaname = ANY(current_schemas(false))';
+        }
+
+        return $dm->query_one($sql, [$name]) !== null;
+    }
+
+    /**
+     * Every view name in the database.
+     *
+     * @return string[]
+     */
+    public static function get_views(): array
+    {
+        $dialect = self::get_dialect();
+        $dm      = self::get_connection();
+
+        if ($dialect === 'sqlite') {
+            $result = $dm->query("SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name");
+        } elseif ($dialect === 'mysql') {
+            $result = $dm->query(
+                'SELECT table_name FROM information_schema.views '
+                . 'WHERE table_schema = DATABASE() ORDER BY table_name'
+            );
+        } else {
+            $result = $dm->query(
+                'SELECT viewname FROM pg_views '
+                . 'WHERE schemaname = ANY(current_schemas(false)) ORDER BY viewname'
+            );
+        }
+
+        return array_map(fn($row) => array_values($row)[0], $result);
+    }
+
+    /**
+     * A view built for one dialect cannot be created on another: the rendering
+     * differs, and the failure would otherwise be a syntax error at the server.
+     */
+    protected static function assert_same_dialect(View $view): void
+    {
+        $connection_dialect = self::get_dialect();
+
+        if ($view->get_dialect() !== $connection_dialect) {
+            throw new \RuntimeException(
+                'The view "' . $view->get_name() . '" is declared for ' . $view->get_dialect()
+                . ' and this connection speaks ' . $connection_dialect . '.'
+            );
+        }
+    }
+
+    // =========================================
+    // Materialized views (PostgreSQL)
+    // =========================================
+
+    /**
+     * Create a materialized view, and its indexes.
+     *
+     * The indexes are part of creating it, not an afterthought: a concurrent
+     * refresh needs a unique one, and a view created without it cannot get a
+     * concurrent refresh until somebody notices.
+     */
+    public static function create_materialized_view(MaterializedView $view, bool $if_not_exists = false): void
+    {
+        self::assert_same_dialect($view);
+        $dm = self::get_connection();
+
+        $dm->execute($view->to_create_sql($if_not_exists));
+
+        foreach ($view->get_index_sql() as $sql) {
+            $dm->execute($sql);
+        }
+    }
+
+    /** Create it only if it is not already there. */
+    public static function create_materialized_view_if_not_exists(MaterializedView $view): void
+    {
+        if (self::has_materialized_view($view)) {
+            return;
+        }
+
+        self::create_materialized_view($view, true);
+    }
+
+    /**
+     * Redefine it: `DROP` then `CREATE`, because PostgreSQL has no
+     * `CREATE OR REPLACE MATERIALIZED VIEW` — measured, not assumed.
+     *
+     * The rows go with the drop, so the new one is populated by its own
+     * `CREATE` (or empty, if the view defers with `with_no_data()`).
+     */
+    public static function create_or_replace_materialized_view(MaterializedView $view): void
+    {
+        self::assert_same_dialect($view);
+        $dm = self::get_connection();
+
+        foreach ($view->to_replace_sql() as $sql) {
+            $dm->execute($sql);
+        }
+
+        foreach ($view->get_index_sql() as $sql) {
+            $dm->execute($sql);
+        }
+    }
+
+    /**
+     * Recompute the stored rows.
+     *
+     * `$concurrently` keeps readers unblocked while it runs, and needs a unique
+     * index on the view and a view that is already populated. PostgreSQL says
+     * which of the two is missing, so this does not guess.
+     */
+    public static function refresh_materialized_view(MaterializedView $view, bool $concurrently = false): void
+    {
+        self::assert_same_dialect($view);
+        self::get_connection()->execute($view->to_refresh_sql($concurrently));
+    }
+
+    /**
+     * Drop it if it exists.
+     *
+     * `DROP VIEW` will not do this — PostgreSQL answers `"x" is not a view`.
+     *
+     * @param MaterializedView|string $view
+     */
+    public static function drop_materialized_view($view): void
+    {
+        if ($view instanceof MaterializedView) {
+            self::get_connection()->execute($view->to_drop_sql());
+            return;
+        }
+
+        $name = self::quote_identifier($view, self::get_dialect());
+        self::get_connection()->execute("DROP MATERIALIZED VIEW IF EXISTS {$name}");
+    }
+
+    /** @param MaterializedView|string $view */
+    public static function has_materialized_view($view): bool
+    {
+        $name = $view instanceof MaterializedView ? $view->get_name() : $view;
+
+        return self::get_connection()->query_one(
+            'SELECT matviewname FROM pg_matviews '
+            . 'WHERE matviewname = ? AND schemaname = ANY(current_schemas(false))',
+            [$name]
+        ) !== null;
+    }
+
+    /**
+     * Does it hold rows yet?
+     *
+     * A view created `WITH NO DATA` is not empty — **reading it is an error**
+     * until its first refresh. Worth asking before a job assumes otherwise.
+     *
+     * @param MaterializedView|string $view
+     */
+    public static function is_materialized_view_populated($view): bool
+    {
+        $name = $view instanceof MaterializedView ? $view->get_name() : $view;
+
+        $row = self::get_connection()->query_one(
+            'SELECT ispopulated FROM pg_matviews '
+            . 'WHERE matviewname = ? AND schemaname = ANY(current_schemas(false))',
+            [$name]
+        );
+
+        if ($row === null) {
+            throw new \RuntimeException('There is no materialized view called "' . $name . '" here.');
+        }
+
+        return (bool) reset($row);
+    }
+
+    /**
+     * Every materialized view name in the database.
+     *
+     * @return string[]
+     */
+    public static function get_materialized_views(): array
+    {
+        $result = self::get_connection()->query(
+            'SELECT matviewname FROM pg_matviews '
+            . 'WHERE schemaname = ANY(current_schemas(false)) ORDER BY matviewname'
+        );
+
+        return array_map(fn($row) => array_values($row)[0], $result);
+    }
+
+    /** The two kinds share a parent class and nothing else about their DDL. */
+    protected static function refuse_materialized(View $view, string $method): void
+    {
+        if ($view instanceof MaterializedView) {
+            throw new \RuntimeException(
+                $method . '() is for plain views. "' . $view->get_name() . '" is materialized: use '
+                . 'create_materialized_view(), which also creates the indexes a concurrent refresh needs.'
+            );
         }
     }
 

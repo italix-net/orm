@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Push Command
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -71,7 +76,11 @@ class PushCommand extends Command
         
         $this->info('Pushing schema to database...');
         
-        $result = $pusher->push($tables, $force);
+        // Two flags, deliberately. --force accepts the destructive changes shown
+        // for the tables in the schema file; dropping the tables the file does
+        // not mention is a separate sentence, because a schema file holding part
+        // of a database is the ordinary case.
+        $result = $pusher->push($tables, $force, $this->has_option('drop-undeclared'));
         
         // Show results
         if (!empty($result['created_tables'])) {

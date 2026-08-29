@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Customer Model (Base Class for Agent)
  *
@@ -115,9 +120,9 @@ class Customer extends ActiveRow
     public static function create_auto(array $customer_data, array $delegate_data = []): static
     {
         // If VAT ID is present, create Organization; otherwise Person
-        $hasVat = !empty($delegate_data['vat_id']);
+        $has_vat = !empty($delegate_data['vat_id']);
 
-        if ($hasVat) {
+        if ($has_vat) {
             return static::create_organization($customer_data, $delegate_data);
         } else {
             return static::create_person($customer_data, $delegate_data);
@@ -155,11 +160,11 @@ class Customer extends ActiveRow
      * @param string $customerNumber
      * @return static|null
      */
-    public static function find_by_customer_number(string $customerNumber): ?static
+    public static function find_by_customer_number(string $customer_number): ?static
     {
         $table = static::get_table();
         $customer = static::find_one([
-            'where' => eq($table->customer_number, $customerNumber),
+            'where' => eq($table->customer_number, $customer_number),
         ]);
 
         if ($customer) {
@@ -335,12 +340,12 @@ class Customer extends ActiveRow
      */
     public function days_since_last_order(): ?int
     {
-        $lastDate = $this->last_order_date();
-        if (!$lastDate) {
+        $last_date = $this->last_order_date();
+        if (!$last_date) {
             return null;
         }
 
-        $last = new \DateTime($lastDate);
+        $last = new \DateTime($last_date);
         $now = new \DateTime();
         return (int) $now->diff($last)->days;
     }
@@ -386,12 +391,12 @@ class Customer extends ActiveRow
 
         sort($dates);
 
-        $totalDays = 0;
+        $total_days = 0;
         for ($i = 1; $i < count($dates); $i++) {
-            $totalDays += ($dates[$i] - $dates[$i - 1]) / 86400;
+            $total_days += ($dates[$i] - $dates[$i - 1]) / 86400;
         }
 
-        return $totalDays / (count($dates) - 1);
+        return $total_days / (count($dates) - 1);
     }
 
     // =========================================

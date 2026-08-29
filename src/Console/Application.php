@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Console Application
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -42,6 +47,7 @@ class Application
             'db:pull' => Commands\PullCommand::class,
             'db:diff' => Commands\DiffCommand::class,
             'db:squash' => Commands\SquashCommand::class,
+            'db:seed' => Commands\SeedCommand::class,
             'help' => Commands\HelpCommand::class,
         ];
     }

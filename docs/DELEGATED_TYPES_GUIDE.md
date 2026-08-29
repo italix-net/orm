@@ -222,6 +222,17 @@ class Thing extends ActiveRow
 }
 ```
 
+> **The four configuration methods above are now optional if the `Table` itself is configured.**
+> `type_column('type')`, `type_path_column('type_path')`, `delegate_foreign_key('thing_id')` and
+> `delegates([...])` on the schema `Table` — the same facts the Data Mapper side
+> (`$dm->query_table($table)->with(...)`) already needs regardless of `ActiveRow` — are read as the
+> default whenever the method is not overridden. `get_delegated_types()` in particular is derived by
+> matching each delegate `Table` in `Table::delegates([...])` to whichever `ActiveRow` class, if any,
+> called `set_persistence()` with that exact table (Step 4 below) — so as long as `Thing`'s `Table`
+> declares its delegates and `Book`/`Movie`/`Person` each call `set_persistence()`, the map above does
+> not have to be written by hand at all. Overriding any of the four still works and still wins — this
+> only changes what happens when you do not bother.
+
 ### Step 3: Create Delegate Classes
 
 ```php
@@ -282,14 +293,18 @@ Person::set_persistence($dm, $schema->persons);
 
 ### DelegatedTypes Trait Methods
 
-#### Configuration Methods (Override in Subclass)
+#### Configuration Methods (override in subclass, or leave to be derived)
+
+Each one, if not overridden, reads the bound schema `Table` first (when `Persistable::set_persistence()`
+was called) and only falls back to the literal default shown below when there is no `Table`, or it is
+not configured for delegation.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `get_delegated_types()` | `array<string, class-string>` | Map of type names to delegate classes |
-| `get_type_column()` | `string` | Column storing type name (default: `'type'`) |
-| `get_type_path_column()` | `string\|null` | Column storing hierarchy path (default: `'type_path'`) |
-| `get_delegate_foreign_key()` | `string` | FK column in delegate tables (default: `'thing_id'`) |
+| `get_delegated_types()` | `array<string, class-string>` | Derived from `Table::delegates([...])` matched against `ActiveRowRegistry`; empty if neither exists |
+| `get_type_column()` | `string` | `Table::get_type_column()` if set, else `'type'` |
+| `get_type_path_column()` | `string\|null` | `Table::get_type_path_column()` **exactly as given, including `null`**, if the `Table` is configured for delegation; else `'type_path'` |
+| `get_delegate_foreign_key()` | `string` | `Table::get_delegate_foreign_key()` if set, else `'thing_id'` |
 
 #### Delegate Access
 

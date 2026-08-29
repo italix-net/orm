@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Schema Pusher
  * 
@@ -6,7 +11,7 @@
  * Useful for rapid prototyping and development.
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -38,13 +43,37 @@ class SchemaPusher
     }
 
     /**
-     * Push schema changes to database
-     * 
-     * @param Table[] $tables Array of Table definitions
-     * @param bool $force Whether to apply destructive changes
-     * @return array Result with applied changes
+     * Bring the database in line with these table declarations.
+     *
+     * Additive changes — a table that is missing, a column that is missing — are
+     * applied. Everything that can lose data is gated, and the two gates are
+     * **not the same flag**:
+     *
+     * | | |
+     * |---|---|
+     * | `$force` | drop the columns this declaration no longer has |
+     * | `$drop_undeclared` **and** `$force` | drop the tables it does not mention |
+     *
+     * They were one flag, and that was a trap with teeth. `diff()` calls every
+     * table it did not receive a "drop", because it cannot tell a partial
+     * declaration from a complete one — and passing *part* of a schema is the
+     * ordinary case: two or three tables somebody is working on. So
+     * `push($some_tables, true)` meant "align these, and delete the rest of the
+     * database", which is not what anybody types that line to mean.
+     *
+     * The author of this method found that out by running it against a
+     * development database with 21 tables in it, from a test written to check
+     * that it was safe. The backup was good. The flag is now two flags.
+     *
+     * Changes to an existing column — a type, a length — are **reported and not
+     * applied**, whatever the flags: they are dialect-specific and can lose data,
+     * and half of a conversion is worse than none of it.
+     *
+     * @param Table[] $tables the declarations to apply
+     * @param bool $force accept the destructive changes shown for these tables
+     * @param bool $drop_undeclared also drop tables that are not in $tables
      */
-    public function push(array $tables, bool $force = false): array
+    public function push(array $tables, bool $force = false, bool $drop_undeclared = false): array
     {
         $diff = $this->differ->diff($tables);
         $result = [
@@ -70,9 +99,11 @@ class SchemaPusher
             }
         }
         
-        // Drop tables (only with --force)
+        // Drop tables: only when the caller has said **both** that destructive
+        // changes are acceptable and that the tables it did not name are meant
+        // to go. See the note on this method for why one flag was not enough.
         foreach ($diff['drop_tables'] as $table_name) {
-            if ($force) {
+            if ($force && $drop_undeclared) {
                 try {
                     Schema::drop_if_exists($table_name);
                     $result['dropped_tables'][] = $table_name;
@@ -81,15 +112,23 @@ class SchemaPusher
                     $result['errors'][] = "Failed to drop {$table_name}: " . $e->getMessage();
                 }
             } else {
-                $result['skipped'][] = "Would drop table: {$table_name} (use --force)";
-                $this->output("Skipped dropping: {$table_name} (use --force)");
+                $result['skipped'][] = "Would drop table: {$table_name} "
+                    . '(needs force AND drop_undeclared — it is not in the declaration you passed)';
+                $this->output("Skipped dropping: {$table_name}");
             }
         }
         
         // Alter existing tables
         foreach ($diff['alter_tables'] as $table_name => $changes) {
             try {
-                $applied = $this->apply_table_changes($table_name, $changes, $force);
+                $skipped = [];
+                $applied = $this->apply_table_changes($table_name, $changes, $force, $skipped);
+
+                foreach ($skipped as $note) {
+                    $result['skipped'][] = $note;
+                    $this->output("Skipped: {$note}");
+                }
+
                 if (!empty($applied)) {
                     $result['altered_tables'][$table_name] = $applied;
                     $this->output("Altered table: {$table_name}");
@@ -154,11 +193,11 @@ class SchemaPusher
     /**
      * Apply changes to an existing table
      */
-    protected function apply_table_changes(string $table_name, array $changes, bool $force): array
+    protected function apply_table_changes(string $table_name, array $changes, bool $force, array &$skipped = []): array
     {
         $applied = [];
         $table_quoted = $this->quote_identifier($table_name);
-        
+
         // Add new columns
         foreach ($changes['add_columns'] as $col) {
             $col_def = $this->build_column_definition($col);
@@ -166,27 +205,75 @@ class SchemaPusher
             $this->dm->execute($sql);
             $applied[] = "Added column: {$col['name']}";
         }
-        
-        // Drop columns (only with --force)
+
+        // Drop columns — only with force, and only where the server can.
         foreach ($changes['drop_columns'] as $col_name) {
-            if ($force) {
-                $col_quoted = $this->quote_identifier($col_name);
-                $sql = "ALTER TABLE {$table_quoted} DROP COLUMN {$col_quoted}";
-                $this->dm->execute($sql);
-                $applied[] = "Dropped column: {$col_name}";
+            if (!$force) {
+                // Said out loud. A column that has left the model and stays in
+                // the database is a thing to decide about, and silence is the
+                // one answer that guarantees nobody does.
+                $skipped[] = "Would drop column: {$table_name}.{$col_name} (use force)";
+                continue;
             }
+
+            $refusal = $this->cannot_drop_column();
+
+            if ($refusal !== null) {
+                $skipped[] = "Cannot drop {$table_name}.{$col_name}: {$refusal}";
+                continue;
+            }
+
+            $col_quoted = $this->quote_identifier($col_name);
+            $this->dm->execute("ALTER TABLE {$table_quoted} DROP COLUMN {$col_quoted}");
+            $applied[] = "Dropped column: {$col_name}";
         }
-        
-        // Modify columns (only with --force, as it may lose data)
+
+        // Modify columns: reported, never guessed at. Changing a type is
+        // dialect-specific and can lose data — half of it applied is worse than
+        // none of it, and knowing which is which is the caller's job.
         foreach ($changes['modify_columns'] as $col_name => $mods) {
+            $described = [];
+
+            foreach ($mods as $property => $change) {
+                $described[] = $property . ': ' . var_export($change['from'], true)
+                    . ' → ' . var_export($change['to'], true);
+            }
+
+            $note = "Would modify column: {$col_name} (" . implode(', ', $described)
+                . ') — manual intervention needed';
+
             if ($force) {
-                // This is complex and dialect-specific
-                // For now, just note it
-                $applied[] = "Would modify column: {$col_name} (manual intervention needed)";
+                $applied[] = $note;
+            } else {
+                $skipped[] = $note;
             }
         }
-        
+
         return $applied;
+    }
+
+    /**
+     * Why this server will not drop a column, or null when it will.
+     *
+     * SQLite grew `ALTER TABLE … DROP COLUMN` in **3.35**; before that the only
+     * way is to rebuild the table, copy the rows and swap it in. That is a
+     * migration, with data in it, and doing it silently on the way past is not
+     * something a push should decide.
+     */
+    protected function cannot_drop_column(): ?string
+    {
+        if ($this->dm->get_driver()->get_dialect_name() !== 'sqlite') {
+            return null;
+        }
+
+        $version = (string) ($this->dm->query('SELECT sqlite_version() AS v')[0]['v'] ?? '0');
+
+        if (version_compare($version, '3.35', '>=')) {
+            return null;
+        }
+
+        return "SQLite {$version} has no ALTER TABLE … DROP COLUMN (3.35 added it). "
+            . 'Rebuild the table in a migration, where the copy is visible.';
     }
 
     /**

@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow;
 
@@ -44,8 +49,14 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     protected $original = [];
 
     /**
-     * Primary key column name
-     * @var string
+     * Primary key column name — or, for a table with a composite primary
+     * key (`Table::primary_key([...])`), an array naming every column, in
+     * the same order. A plain string is the ordinary case and is
+     * completely unaffected by composite-key support existing at all.
+     *
+     *     protected static $primary_key = ['tenant_id', 'order_id'];
+     *
+     * @var string|array<int, string>
      */
     protected static $primary_key = 'id';
 
@@ -206,7 +217,7 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
         $value = $this->data[$offset] ?? null;
 
         // Auto-wrap relations if enabled
-        if (static::$auto_wrap_relations && $value !== null && isset(static::$relation_classes[$offset])) {
+        if (static::$auto_wrap_relations && $value !== null && isset(static::resolved_relation_classes()[$offset])) {
             return $this->get_wrapped_relation($offset, $value);
         }
 
@@ -384,8 +395,25 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
      */
     public function exists(): bool
     {
-        $pk = static::$primary_key;
-        return isset($this->data[$pk]) && $this->data[$pk] !== null;
+        // $original is empty exactly for an instance make() produced and
+        // nothing has persisted since — the same signal get_dirty() already
+        // treats as "every field is new". Checking $data's primary key
+        // alone was not enough: a composite key (and, already, a natural
+        // single-column one) is supplied by the caller up front rather than
+        // assigned on INSERT, so a freshly-made row already carries it —
+        // this second check is what tells "about to be created" apart from
+        // "already was".
+        if (empty($this->original)) {
+            return false;
+        }
+
+        foreach ((array) static::$primary_key as $pk) {
+            if (!isset($this->data[$pk]) || $this->data[$pk] === null) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -399,23 +427,58 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     }
 
     /**
-     * Get the primary key value
+     * The primary key value — a scalar for the ordinary single-column case,
+     * or `[column => value, ...]` for a composite key (`static::$primary_key`
+     * declared as an array). This is exactly the shape `TableQuery::find()`
+     * already accepts for either case, so `$row::find($row->get_key())`
+     * round-trips regardless of which kind of key the table has.
      *
      * @return mixed
      */
     public function get_key()
     {
+        if (is_array(static::$primary_key)) {
+            $key = [];
+            foreach (static::$primary_key as $pk) {
+                $key[$pk] = $this->data[$pk] ?? null;
+            }
+
+            return $key;
+        }
+
         return $this->data[static::$primary_key] ?? null;
     }
 
     /**
-     * Get the primary key column name
+     * The primary key column name — only for the single-column case. Raises
+     * on a composite key, where there is no one name to return; use
+     * {@see get_key_names()} there instead.
      *
      * @return string
      */
     public static function get_key_name(): string
     {
+        if (is_array(static::$primary_key)) {
+            throw new \LogicException(
+                static::class . ' has a composite primary key (' . implode(', ', static::$primary_key)
+                . '); get_key_name() has no single name to return — use get_key_names() instead.'
+            );
+        }
+
         return static::$primary_key;
+    }
+
+    /**
+     * Every primary key column name, in declared order — `[static::
+     * $primary_key]` for the ordinary single-column case, so this is the
+     * one to reach for when the code should work the same regardless of
+     * which kind of key the table has.
+     *
+     * @return array<int, string>
+     */
+    public static function get_key_names(): array
+    {
+        return (array) static::$primary_key;
     }
 
     // =========================================================================
@@ -436,7 +499,7 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
             return $this->wrapped_relations_cache[$relation];
         }
 
-        $wrapper = static::$relation_classes[$relation] ?? null;
+        $wrapper = static::resolved_relation_classes()[$relation] ?? null;
         if ($wrapper === null) {
             return $value;
         }
@@ -515,12 +578,98 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
             return null;
         }
 
-        $wrapper = $class ?? static::$relation_classes[$relation] ?? null;
+        $wrapper = $class ?? (static::resolved_relation_classes()[$relation] ?? null);
         if ($wrapper === null) {
             return $value;
         }
 
         return $this->get_wrapped_relation($relation, $value);
+    }
+
+    /** Per-class cache for {@see resolved_relation_classes()} — never invalidated, see its docblock. */
+    private static array $resolved_relation_classes_cache = [];
+
+    /**
+     * Which class wraps each relation's rows, name => class: everything in
+     * `$relation_classes` the subclass declared — still checked first, and
+     * still wins — plus, for any relation `RelationsRegistry` knows about
+     * that is *not* already in there, a class derived from the relation
+     * itself.
+     *
+     * Before this, a class not overriding `$relation_classes` (or
+     * overriding it incompletely) simply had no wrapper for a relation, even
+     * when the relation's target table was, itself, bound to a perfectly
+     * good `ActiveRow` subclass elsewhere — the same fact declared once for
+     * `with()` to use and a second time, separately, for this to use, with
+     * nothing checking the two agreed.
+     *
+     * The derivation: `RelationsRegistry` already knows, for this class's
+     * own bound `Table` (needs `Persistable`), every `Relation` and which
+     * `Table` each one targets; `ActiveRowRegistry` (built for exactly this)
+     * says which class, if any, is registered for that target `Table`. Two
+     * lookups through data this package already had, not a third place
+     * naming the same relation.
+     *
+     * A one-to-many, a many-to-many (`through`) and a `many_polymorphic`
+     * relation all have exactly one real target `Table` — `many_polymorphic`
+     * is filtered to a single concrete type at declaration
+     * (`'type_value' => 'book'`, one target table, not a set of them), the
+     * same way `Many::get_target_table()` already returns the actual far
+     * side of a `through` relation (e.g. `$roles`, not the junction
+     * `$user_roles`) — so all three are derived.
+     *
+     * **`one_polymorphic` is the one genuinely ambiguous case, and the one
+     * deliberately excluded.** A `commentable` can be a `Post` *or* a
+     * `Video`; `PolymorphicOne::get_target_table()` (inherited from the same
+     * base method every relation has) answers with "the first configured
+     * target, for compatibility" — not a real single answer, and deriving a
+     * wrapper class from it would silently mis-wrap a row as the wrong class
+     * instead of leaving it as an array. Detected by `get_targets()`, a
+     * method that exists only on `PolymorphicOne` — `PolymorphicMany` does
+     * not have it, which is exactly why it is not excluded here.
+     * `$relation_classes` (or `relation($name, $class)`'s explicit `$class`)
+     * is still the only way to wrap a `one_polymorphic` relation.
+     *
+     * Computed once per class and cached: `offsetGet()` consults this on
+     * every array access to decide whether a key is a relation at all, and
+     * a `RelationsRegistry`/`ActiveRowRegistry` round trip on every read of
+     * every plain column would be a cost nobody asked for. Safe to cache for
+     * the process's lifetime — the bound `Table` and its relations do not
+     * change after `set_persistence()`/`define_relations()` bootstrap.
+     *
+     * @return array<string, string>
+     */
+    protected static function resolved_relation_classes(): array
+    {
+        if (isset(self::$resolved_relation_classes_cache[static::class])) {
+            return self::$resolved_relation_classes_cache[static::class];
+        }
+
+        $resolved = static::$relation_classes;
+
+        if (method_exists(static::class, 'has_persistence') && static::has_persistence()) {
+            $table_relations = \Italix\Orm\Relations\RelationsRegistry::get_instance()->get(static::get_table());
+
+            if ($table_relations !== null) {
+                foreach ($table_relations->all() as $name => $rel) {
+                    if (isset($resolved[$name])) {
+                        continue; // an explicit override always wins
+                    }
+
+                    if (!method_exists($rel, 'get_target_table') || method_exists($rel, 'get_targets')) {
+                        continue; // polymorphic, or a relation type with no single target
+                    }
+
+                    $class = ActiveRowRegistry::class_for_table($rel->get_target_table());
+
+                    if ($class !== null) {
+                        $resolved[$name] = $class;
+                    }
+                }
+            }
+        }
+
+        return self::$resolved_relation_classes_cache[static::class] = $resolved;
     }
 
     // =========================================================================
@@ -689,7 +838,9 @@ abstract class ActiveRow implements ArrayAccess, Countable, JsonSerializable, It
     {
         $clone = static::wrap($this->data);
         // Remove primary key so it's treated as new
-        unset($clone->data[static::$primary_key]);
+        foreach ((array) static::$primary_key as $pk) {
+            unset($clone->data[$pk]);
+        }
         $clone->original = [];
         return $clone;
     }

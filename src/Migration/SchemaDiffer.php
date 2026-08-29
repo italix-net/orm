@@ -1,11 +1,16 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Schema Differ
  * 
  * Compares database schemas and generates migration suggestions.
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -13,6 +18,7 @@ declare(strict_types=1);
 namespace Italix\Orm\Migration;
 
 use Italix\Orm\DataManager;
+use Italix\Orm\Schema\Column;
 use Italix\Orm\Schema\Table;
 
 /**
@@ -141,49 +147,111 @@ class SchemaDiffer
     /**
      * Diff a single column
      */
+    /**
+     * What differs between a declared column and the one in the database.
+     *
+     * Both sides are put in the same terms first, which is most of the work:
+     *
+     *  - the **type** is compared as "what this declaration would be created as
+     *    *here*", via {@see Column::sql_type()} and
+     *    {@see SchemaIntrospector::canonical_type()}. `datetime()` is `DATETIME`
+     *    on MySQL and `TIMESTAMP` on PostgreSQL; comparing the factory name
+     *    against the server's name reports a change on every timestamp column,
+     *    on every run, forever.
+     *  - **nullability** counts a primary key as not-null on both sides.
+     *    SQLite reports `notnull = 0` for `INTEGER PRIMARY KEY`, and a declared
+     *    `primary_key()` does not set `not_null()` — so a schema that matched
+     *    the database perfectly reported a change on its own primary key. It
+     *    did, for every table, until this suite asked.
+     *
+     * @param Column $defined
+     */
     protected function diff_column($defined, array $db_col): array
     {
         $changes = [];
-        
-        // Get defined column properties
-        $def_type = strtoupper($defined->get_type());
-        $def_length = $defined->get_length();
-        $def_nullable = $defined->is_nullable();
-        
-        // Compare type (simplified)
-        $db_type = strtoupper($db_col['type']);
-        if ($this->normalize_type($def_type) !== $this->normalize_type($db_type)) {
-            $changes['type'] = ['from' => $db_type, 'to' => $def_type];
+        $dialect = $this->introspector->get_dialect();
+
+        // The length comes out of the rendered type, not out of the
+        // declaration: `boolean()` has no length of its own and renders as
+        // `TINYINT(1)` on MySQL, which is the only thing that distinguishes it
+        // there from a small integer.
+        $rendered = $defined->sql_type($dialect);
+
+        $defined_type = SchemaIntrospector::canonical_type(
+            $this->strip_arguments($rendered),
+            $this->argument_of($rendered) ?? $defined->get_length()
+        );
+
+        $db_type = SchemaIntrospector::canonical_type(
+            $this->strip_arguments((string) $db_col['type']),
+            $db_col['length'] === null ? null : (int) $db_col['length']
+        );
+
+        if ($defined_type !== $db_type && !$this->same_type_here($defined_type, $db_type, $dialect)) {
+            $changes['type'] = ['from' => $db_col['type'], 'to' => $defined->get_type()];
         }
-        
-        // Compare length for string types
-        if ($def_length !== null && $db_col['length'] !== null) {
-            if ($def_length !== $db_col['length']) {
-                $changes['length'] = ['from' => $db_col['length'], 'to' => $def_length];
+
+        if ($defined->get_length() !== null && $db_col['length'] !== null) {
+            if ($defined->get_length() !== (int) $db_col['length']) {
+                $changes['length'] = ['from' => (int) $db_col['length'], 'to' => $defined->get_length()];
             }
         }
-        
-        // Compare nullable
-        if ($def_nullable !== $db_col['nullable']) {
-            $changes['nullable'] = ['from' => $db_col['nullable'], 'to' => $def_nullable];
+
+        // PostgreSQL has no unsigned integer, so a declaration that asks for one
+        // is dropped when the table is created there — and comparing it would
+        // report a difference on every such column, on every run, that no
+        // migration could ever close.
+        if ($dialect !== 'postgresql' && $defined->is_unsigned() !== (bool) ($db_col['unsigned'] ?? false)) {
+            $changes['unsigned'] = ['from' => (bool) ($db_col['unsigned'] ?? false), 'to' => $defined->is_unsigned()];
         }
-        
+
+        $defined_nullable = $defined->is_nullable() && !$defined->is_primary_key();
+        $db_nullable      = $db_col['nullable'] && !($db_col['primary'] ?? false);
+
+        if ($defined_nullable !== $db_nullable) {
+            $changes['nullable'] = ['from' => $db_nullable, 'to' => $defined_nullable];
+        }
+
         return $changes;
     }
 
     /**
-     * Normalize type names for comparison
+     * Two canonical names that this particular server treats as one type.
+     *
+     * MariaDB implements `JSON` as `LONGTEXT` — with a `json_valid()` check
+     * constraint, which is not in the column's type — and reports it as
+     * `longtext`. So a `json()` column is exactly what was asked for and looks
+     * like a text column from the outside; calling that a difference means
+     * reporting one on every JSON column, forever, on the server most likely to
+     * have them.
      */
-    protected function normalize_type(string $type): string
+    protected function same_type_here(string $a, string $b, string $dialect): bool
     {
-        $map = [
-            'INT' => 'INTEGER',
-            'BOOL' => 'BOOLEAN',
-            'SERIAL' => 'INTEGER',
-            'BIGSERIAL' => 'BIGINT',
+        $pairs = [
+            'mysql' => [['json', 'text'], ['jsonb', 'text']],
         ];
-        
-        return $map[$type] ?? $type;
+
+        foreach ($pairs[$dialect] ?? [] as [$left, $right]) {
+            if (($a === $left && $b === $right) || ($a === $right && $b === $left)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** The first number in `TINYINT(1)` or `VARCHAR(120)`, when there is one. */
+    protected function argument_of(string $type): ?int
+    {
+        return preg_match('/\((\d+)/', $type, $matches) === 1 ? (int) $matches[1] : null;
+    }
+
+    /** `VARCHAR(120)` and `DECIMAL(10,2)` are a VARCHAR and a DECIMAL. */
+    protected function strip_arguments(string $type): string
+    {
+        $position = strpos($type, '(');
+
+        return $position === false ? trim($type) : trim(substr($type, 0, $position));
     }
 
     /**
@@ -196,7 +264,7 @@ class SchemaDiffer
             'type' => $col->get_type(),
             'length' => $col->get_length(),
             'nullable' => $col->is_nullable(),
-            'default' => $col->get_default_value(),
+            'default' => $col->get_default(),
             'primary' => $col->is_primary_key(),
             'auto_increment' => $col->is_auto_increment(),
             'unique' => $col->is_unique(),
@@ -206,115 +274,261 @@ class SchemaDiffer
     /**
      * Generate migration code from diff
      */
-    public function generate_migration_from_diff(array $diff): string
+    /**
+     * A migration that would close this diff.
+     *
+     * The fix-forward half of `ix db:diff`. What comes out is a file to read and
+     * then run, not one to trust: it is generated from what the database and the
+     * declarations disagree about, and only one of those two is right.
+     *
+     * ## What it writes, and what it only proposes
+     *
+     * | | |
+     * |---|---|
+     * | a missing table | `Schema::create()` with **its actual columns**, taken from the declaration |
+     * | a missing column | `$table->…()` with its type, nullability and default |
+     * | a column the declaration dropped | commented out — it holds data, and a migration that removes it should be a sentence somebody wrote |
+     * | a changed type or length | a comment saying what changed. Converting a column is dialect-specific and can lose data; half of one is worse than none |
+     * | a table nobody declared | a comment. It may be another application's, or a library's — `ix_session` is nobody's model |
+     *
+     * `down()` reverses what `up()` actually did: the tables it created and the
+     * columns it added. It cannot reverse what it only proposed, which is one
+     * more reason those stay comments.
+     *
+     * @param array<string, mixed> $diff  from {@see diff()}
+     * @param Table[]              $tables the declarations the diff was made against
+     */
+    public function generate_migration_from_diff(array $diff, array $tables = []): string
     {
-        $up_lines = [];
-        $down_lines = [];
-        
-        // Create tables
-        foreach ($diff['create_tables'] as $table) {
-            $up_lines[] = "// Create table: {$table}";
-            $up_lines[] = "Schema::create('{$table}', function (Blueprint \$table) {";
-            $up_lines[] = "    \$table->id();";
-            $up_lines[] = "    \$table->timestamps();";
-            $up_lines[] = "});";
-            $up_lines[] = "";
-            
-            $down_lines[] = "Schema::drop_if_exists('{$table}');";
+        $declared = [];
+
+        foreach ($tables as $table) {
+            $declared[$table->get_name()] = $table;
         }
-        
-        // Drop tables (commented out for safety)
-        foreach ($diff['drop_tables'] as $table) {
-            $up_lines[] = "// WARNING: Table '{$table}' exists in database but not in schema";
-            $up_lines[] = "// Uncomment to drop: Schema::drop_if_exists('{$table}');";
-            $up_lines[] = "";
+
+        $up   = [];
+        $down = [];
+
+        foreach ($diff['create_tables'] as $name) {
+            if (!isset($declared[$name])) {
+                // Without the declaration there is nothing to write but a stub,
+                // and a stub that looks like a migration is worse than a note.
+                $up[] = "// Table '{$name}' is declared but not in the database, and this generator";
+                $up[] = '// was not given its definition. Pass the tables to generate_migration_from_diff().';
+                $up[] = '';
+                continue;
+            }
+
+            $up[] = "Schema::create('{$name}', function (Blueprint \$table) {";
+
+            foreach ($declared[$name]->get_columns() as $column) {
+                $up[] = '    ' . $this->blueprint_line($column) . ';';
+            }
+
+            $up[] = '});';
+            $up[] = '';
+
+            $down[] = "Schema::drop_if_exists('{$name}');";
         }
-        
-        // Alter tables
-        foreach ($diff['alter_tables'] as $table => $changes) {
-            $up_lines[] = "Schema::table('{$table}', function (Blueprint \$table) {";
-            
-            foreach ($changes['add_columns'] as $col) {
-                $method = $this->type_to_method($col['type']);
-                $line = "    \$table->{$method}('{$col['name']}')";
-                if ($col['nullable']) $line .= '->nullable()';
-                if ($col['unique']) $line .= '->unique()';
-                $line .= ';';
-                $up_lines[] = $line;
+
+        foreach ($diff['drop_tables'] as $name) {
+            $up[] = "// '{$name}' is in the database and not among the declarations passed here.";
+            $up[] = "// It may belong to a library or another application: ix_session is nobody's model.";
+            $up[] = "// If it is really gone: Schema::drop_if_exists('{$name}');";
+            $up[] = '';
+        }
+
+        foreach ($diff['alter_tables'] as $name => $changes) {
+            $body     = [];
+            $comments = [];
+
+            foreach ($changes['add_columns'] as $column) {
+                $body[] = '    ' . $this->blueprint_line_from_definition($column) . ';';
             }
-            
-            foreach ($changes['drop_columns'] as $col) {
-                $up_lines[] = "    // \$table->drop_column('{$col}'); // Uncomment to drop";
+
+            foreach ($changes['drop_columns'] as $column) {
+                $comments[] = "    // '{$column}' is in the database and not in the declaration. It holds data:";
+                $comments[] = "    // \$table->drop_column('{$column}');";
             }
-            
-            foreach ($changes['modify_columns'] as $col => $mods) {
-                $up_lines[] = "    // Column '{$col}' may need modification: " . json_encode($mods);
-            }
-            
-            $up_lines[] = "});";
-            $up_lines[] = "";
-            
-            // Down: reverse
-            if (!empty($changes['add_columns'])) {
-                $down_lines[] = "Schema::table('{$table}', function (Blueprint \$table) {";
-                foreach ($changes['add_columns'] as $col) {
-                    $down_lines[] = "    \$table->drop_column('{$col['name']}');";
+
+            foreach ($changes['modify_columns'] as $column => $modifications) {
+                foreach ($modifications as $property => $change) {
+                    $comments[] = sprintf(
+                        '    // %s.%s %s: %s → %s (convert by hand: the dialect decides, and data can go)',
+                        $name,
+                        $column,
+                        $property,
+                        var_export($change['from'], true),
+                        var_export($change['to'], true)
+                    );
                 }
-                $down_lines[] = "});";
+            }
+
+            if ($body === [] && $comments === []) {
+                continue;
+            }
+
+            $up[] = "Schema::table('{$name}', function (Blueprint \$table) {";
+            $up   = array_merge($up, $body, $comments);
+            $up[] = '});';
+            $up[] = '';
+
+            if ($changes['add_columns'] !== []) {
+                $down[] = "Schema::table('{$name}', function (Blueprint \$table) {";
+
+                foreach ($changes['add_columns'] as $column) {
+                    $down[] = "    \$table->drop_column('{$column['name']}');";
+                }
+
+                $down[] = '});';
             }
         }
-        
-        $class_name = 'AutoGeneratedMigration' . date('YmdHis');
-        
+
+        if ($up === []) {
+            $up[] = '// Nothing to do: the declarations and the database agree.';
+        }
+
+        if ($down === []) {
+            $down[] = '// Nothing to undo: up() only proposed changes, it did not make any.';
+        }
+
+        $class_name = 'SchemaDiff' . date('YmdHis');
+
         return <<<PHP
 <?php
+/**
+ * Generated by `ix db:diff --migration` on {$this->now()}.
+ *
+ * **Read this before running it.** It was written from the difference between
+ * the models and the database, and only one of those two is right — which one
+ * is a question about your application, not about SQL.
+ *
+ * Anything that would remove a column, or convert one, is left commented out:
+ * those hold data, and the decision is a sentence somebody should have written
+ * on purpose.
+ */
 
 use Italix\Orm\Migration\Migration;
 use Italix\Orm\Migration\Schema;
 use Italix\Orm\Migration\Blueprint;
 
-/**
- * Auto-generated migration based on schema diff.
- * Review carefully before running!
- */
 class {$class_name} extends Migration
 {
     public function up(): void
     {
-        {$this->indent_lines($up_lines, 2)}
+        {$this->indent_lines($up, 2)}
     }
 
     public function down(): void
     {
-        {$this->indent_lines($down_lines, 2)}
+        {$this->indent_lines($down, 2)}
     }
 }
 
 PHP;
     }
 
+    /** The moment this file was written. */
+    protected function now(): string
+    {
+        return date('Y-m-d H:i');
+    }
+
     /**
-     * Convert type to Blueprint method
+     * One declared column, as the Blueprint call that makes it.
+     *
+     * @param Column $column
      */
+    protected function blueprint_line(Column $column): string
+    {
+        return $this->blueprint_line_from_definition($this->column_to_definition($column));
+    }
+
+    /**
+     * One column definition, as the Blueprint call that makes it.
+     *
+     * @param array<string, mixed> $column
+     */
+    protected function blueprint_line_from_definition(array $column): string
+    {
+        $method = $this->type_to_method((string) $column['type']);
+        $name   = $column['name'];
+
+        if ($method === 'string' || $method === 'char') {
+            $line = "\$table->{$method}('{$name}'" . ($column['length'] ? ', ' . (int) $column['length'] : '') . ')';
+        } elseif ($method === 'decimal') {
+            $line = "\$table->decimal('{$name}')";
+        } else {
+            $line = "\$table->{$method}('{$name}')";
+        }
+
+        if (!empty($column['primary']) && !empty($column['auto_increment'])) {
+            // id() is the Blueprint's word for exactly this.
+            return "\$table->id('{$name}')";
+        }
+
+        if (!empty($column['nullable'])) {
+            $line .= '->nullable()';
+        }
+
+        if (!empty($column['unique'])) {
+            $line .= '->unique()';
+        }
+
+        if (isset($column['default']) && $column['default'] !== null) {
+            $default = $column['default'];
+            $line   .= is_numeric($default)
+                ? "->default({$default})"
+                : "->default('" . addslashes((string) $default) . "')";
+        }
+
+        return $line;
+    }
+
     protected function type_to_method(string $type): string
     {
+        // The Blueprint's names for the same things, which are not this
+        // package's factory names — `varchar()` is `string()` there, and a
+        // missing entry used to fall to `string()`, quietly turning a `uuid` or
+        // a `blob` into a VARCHAR(255) in a generated migration.
         $map = [
-            'INTEGER' => 'integer',
-            'INT' => 'integer',
-            'BIGINT' => 'big_integer',
-            'SMALLINT' => 'small_integer',
-            'VARCHAR' => 'string',
-            'TEXT' => 'text',
-            'BOOLEAN' => 'boolean',
-            'TIMESTAMP' => 'timestamp',
-            'DATETIME' => 'datetime',
-            'DATE' => 'date',
-            'DECIMAL' => 'decimal',
-            'FLOAT' => 'float',
-            'JSON' => 'json',
+            'INTEGER'          => 'integer',
+            'INT'              => 'integer',
+            'SERIAL'           => 'integer',
+            'BIGINT'           => 'big_integer',
+            'BIGSERIAL'        => 'big_integer',
+            'SMALLINT'         => 'small_integer',
+            'VARCHAR'          => 'string',
+            'CHAR'             => 'char',
+            'TEXT'             => 'text',
+            'BOOLEAN'          => 'boolean',
+            'TIMESTAMP'        => 'timestamp',
+            'DATETIME'         => 'datetime',
+            'DATE'             => 'date',
+            'TIME'             => 'time',
+            'DECIMAL'          => 'decimal',
+            'NUMERIC'          => 'decimal',
+            'REAL'             => 'float',
+            'FLOAT'            => 'float',
+            'DOUBLE'           => 'double',
+            'DOUBLE_PRECISION' => 'double',
+            'JSON'             => 'json',
+            'JSONB'            => 'jsonb',
+            'UUID'             => 'uuid',
+            'BLOB'             => 'blob',
+            'BINARY'           => 'binary',
         ];
-        
-        return $map[strtoupper($type)] ?? 'string';
+
+        $method = $map[strtoupper($type)] ?? null;
+
+        if ($method === null) {
+            throw new \RuntimeException(
+                'No Blueprint method for the column type "' . $type . '". A generated migration that '
+                . 'guessed would create the wrong column and look right doing it.'
+            );
+        }
+
+        return $method;
     }
 
     /**

@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Diff Command
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -24,7 +29,7 @@ class DiffCommand extends Command
 
     public function get_description(): string
     {
-        return 'Compare schema with database and generate suggested migration';
+        return 'Compare a schema file with the database. --migration writes one that closes the difference.';
     }
 
     public function handle(): int
@@ -101,8 +106,16 @@ class DiffCommand extends Command
         }
         
         // Generate migration
-        if ($this->has_option('generate') || $this->confirm('Generate migration file?', true)) {
-            $code = $differ->generate_migration_from_diff($diff);
+        // `--migration` is the name, because that is what it writes. `--generate`
+        // is what this command called it first and still answers to: one thing
+        // with two names is a wart, and breaking somebody's script over it is
+        // worse than the wart.
+        if ($this->has_option('migration')
+            || $this->has_option('generate')
+            || $this->confirm('Generate migration file?', true)) {
+            // With the declarations, not without: a table the database does not
+            // have can only be written properly by the thing that declares it.
+            $code = $differ->generate_migration_from_diff($diff, $tables);
             
             $output = $this->option('output');
             if ($output) {

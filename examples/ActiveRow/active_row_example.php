@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 /**
  * ActiveRow Example
@@ -11,7 +16,25 @@
  * - Work with relations
  */
 
-require_once __DIR__ . '/../../vendor/autoload.php';
+// The autoloader, wherever this package happens to sit. One hardcoded depth
+// works in exactly the arrangement it was written in; a list of candidates
+// works when somebody vendors the package, installs it, or checks it out.
+(static function (): void {
+    foreach ([
+        __DIR__ . '/../../vendor/autoload.php',
+        __DIR__ . '/../../../vendor/autoload.php',
+        __DIR__ . '/../../../../../../vendor/autoload.php',
+        __DIR__ . '/../../../../../../../vendor/autoload.php',
+    ] as $autoload) {
+        if (is_file($autoload)) {
+            require_once $autoload;
+
+            return;
+        }
+    }
+
+    require_once __DIR__ . '/../../src/autoload.php';
+})();
 
 use Italix\Orm\ActiveRow\ActiveRow;
 use Italix\Orm\ActiveRow\Traits\Persistable;
@@ -52,8 +75,8 @@ class UserRow extends ActiveRow
      */
     public function display_name(): string
     {
-        $fullName = $this->full_name();
-        return !empty($fullName) ? $fullName : ($this['email'] ?? 'Unknown');
+        $full_name = $this->full_name();
+        return !empty($full_name) ? $full_name : ($this['email'] ?? 'Unknown');
     }
 
     /**
@@ -361,11 +384,11 @@ UserRow::create(['email' => 'jane@example.com', 'first_name' => 'Jane', 'last_na
 UserRow::create(['email' => 'bob@example.com', 'first_name' => 'Bob', 'last_name' => 'Wilson']);
 
 // Query as plain arrays, then wrap
-$rawUsers = $dm->select()->from($users)->execute();
-$userRows = UserRow::wrap_many($rawUsers);
+$raw_users = $dm->select()->from($users)->execute();
+$user_rows = UserRow::wrap_many($raw_users);
 
 echo "Users in database:\n";
-foreach ($userRows as $u) {
+foreach ($user_rows as $u) {
     echo "  - {$u->display_name()} ({$u['email']})" .
          ($u->is_admin() ? ' [ADMIN]' : '') . "\n";
 }
@@ -379,8 +402,8 @@ echo "5. Static finder methods\n";
 echo str_repeat('-', 50) . "\n";
 
 // Find by ID
-$foundUser = UserRow::find(1);
-echo "Find by ID 1: " . ($foundUser ? $foundUser->display_name() : 'Not found') . "\n";
+$found_user = UserRow::find(1);
+echo "Find by ID 1: " . ($found_user ? $found_user->display_name() : 'Not found') . "\n";
 
 // Find with options
 $admins = UserRow::find_all([
@@ -389,10 +412,10 @@ $admins = UserRow::find_all([
 echo "Admin users: " . count($admins) . "\n";
 
 // Find one
-$firstUser = UserRow::find_one([
+$first_user = UserRow::find_one([
     'order_by' => $users->id,
 ]);
-echo "First user: " . ($firstUser ? $firstUser->display_name() : 'None') . "\n\n";
+echo "First user: " . ($first_user ? $first_user->display_name() : 'None') . "\n\n";
 
 // ============================================
 // 6. Working with relations

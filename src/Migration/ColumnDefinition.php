@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Column Definition for Migrations
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -35,6 +40,8 @@ class ColumnDefinition
     protected ?string $collation = null;
     protected ?string $change_from = null;
     protected array $enum_values = [];
+    /** @var string[] */
+    protected array $check_expressions = [];
 
     public function __construct(string $name, string $type)
     {
@@ -197,6 +204,29 @@ class ColumnDefinition
     }
 
     /**
+     * Add a `CHECK (...)` constraint on this column. Calling it more than
+     * once adds more clauses rather than replacing the first one — see
+     * {@see \Italix\Orm\Schema\Column::check()}, the same method on the
+     * schema side.
+     */
+    public function check(string $expression): self
+    {
+        $this->check_expressions[] = $expression;
+        return $this;
+    }
+
+    /**
+     * The `CHECK` expressions added with `check()`. Does **not** include the
+     * one an `enum()` column adds for its own values on PostgreSQL/SQLite.
+     *
+     * @return string[]
+     */
+    public function get_checks(): array
+    {
+        return $this->check_expressions;
+    }
+
+    /**
      * Mark this as a column modification (not creation)
      */
     public function change(): self
@@ -264,7 +294,21 @@ class ColumnDefinition
         if ($this->collation !== null && $dialect === 'mysql') {
             $parts[] = "COLLATE {$this->collation}";
         }
-        
+
+        // Explicit CHECK constraints
+        foreach ($this->check_expressions as $expression) {
+            $parts[] = "CHECK ({$expression})";
+        }
+
+        // enum() on PostgreSQL/SQLite has no native type — get_type_sql()
+        // already fell back to VARCHAR(255) for it; without this the column
+        // accepted anything, which is not what enum() promised.
+        if (strtoupper($this->type) === 'ENUM' && $dialect !== 'mysql' && !empty($this->enum_values)) {
+            $quoted_name = $this->quote_identifier($this->name, $dialect);
+            $values = array_map(fn($v) => "'" . addslashes((string) $v) . "'", $this->enum_values);
+            $parts[] = 'CHECK (' . $quoted_name . ' IN (' . implode(', ', $values) . '))';
+        }
+
         return implode(' ', $parts);
     }
 

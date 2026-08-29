@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * PrestaShop API Client
  *
@@ -14,8 +19,8 @@ namespace Examples\Ecommerce\PrestaShop;
  */
 class PrestaShopClient
 {
-    private string $apiUrl;
-    private string $apiKey;
+    private string $api_url;
+    private string $api_key;
     private bool $debug;
 
     /**
@@ -23,10 +28,10 @@ class PrestaShopClient
      * @param string $apiKey WebService API key
      * @param bool $debug Enable debug output
      */
-    public function __construct(string $shopUrl, string $apiKey, bool $debug = false)
+    public function __construct(string $shop_url, string $api_key, bool $debug = false)
     {
-        $this->apiUrl = rtrim($shopUrl, '/') . '/api';
-        $this->apiKey = $apiKey;
+        $this->api_url = rtrim($shop_url, '/') . '/api';
+        $this->api_key = $api_key;
         $this->debug = $debug;
     }
 
@@ -38,12 +43,12 @@ class PrestaShopClient
      * @param array $options Additional options (sort, filters)
      * @return array Array of order data
      */
-    public function getOrders(int $minId = 1, int $limit = 100, array $options = []): array
+    public function get_orders(int $min_id = 1, int $limit = 100, array $options = []): array
     {
         $params = [
             'display' => 'full',
             'output_format' => 'JSON',
-            'filter[id]' => "[{$minId},999999999]",
+            'filter[id]' => "[{$min_id},999999999]",
             'limit' => $limit,
             'sort' => '[id_ASC]',
         ];
@@ -66,9 +71,9 @@ class PrestaShopClient
      * @param int $orderId
      * @return array|null
      */
-    public function getOrder(int $orderId): ?array
+    public function get_order(int $order_id): ?array
     {
-        $response = $this->request("orders/{$orderId}", [
+        $response = $this->request("orders/{$order_id}", [
             'display' => 'full',
             'output_format' => 'JSON',
         ]);
@@ -86,12 +91,12 @@ class PrestaShopClient
      * @param int $orderId
      * @return array
      */
-    public function getOrderDetails(int $orderId): array
+    public function get_order_details(int $order_id): array
     {
         $response = $this->request('order_details', [
             'display' => 'full',
             'output_format' => 'JSON',
-            'filter[id_order]' => $orderId,
+            'filter[id_order]' => $order_id,
         ]);
 
         if (!$response || !isset($response['order_details'])) {
@@ -107,9 +112,9 @@ class PrestaShopClient
      * @param int $productId
      * @return array|null
      */
-    public function getProduct(int $productId): ?array
+    public function get_product(int $product_id): ?array
     {
-        $response = $this->request("products/{$productId}", [
+        $response = $this->request("products/{$product_id}", [
             'display' => 'full',
             'output_format' => 'JSON',
         ]);
@@ -127,7 +132,7 @@ class PrestaShopClient
      * @param array $ids Product IDs to fetch
      * @return array
      */
-    public function getProducts(array $ids = []): array
+    public function get_products(array $ids = []): array
     {
         $params = [
             'display' => 'full',
@@ -153,9 +158,9 @@ class PrestaShopClient
      * @param int $customerId
      * @return array|null
      */
-    public function getCustomer(int $customerId): ?array
+    public function get_customer(int $customer_id): ?array
     {
-        $response = $this->request("customers/{$customerId}", [
+        $response = $this->request("customers/{$customer_id}", [
             'display' => 'full',
             'output_format' => 'JSON',
         ]);
@@ -173,9 +178,9 @@ class PrestaShopClient
      * @param int $addressId
      * @return array|null
      */
-    public function getAddress(int $addressId): ?array
+    public function get_address(int $address_id): ?array
     {
-        $response = $this->request("addresses/{$addressId}", [
+        $response = $this->request("addresses/{$address_id}", [
             'display' => 'full',
             'output_format' => 'JSON',
         ]);
@@ -192,7 +197,7 @@ class PrestaShopClient
      *
      * @return array
      */
-    public function getOrderStates(): array
+    public function get_order_states(): array
     {
         $response = $this->request('order_states', [
             'display' => 'full',
@@ -212,10 +217,10 @@ class PrestaShopClient
      * @param int $productId The pack/bundle product ID
      * @return array Array of pack items with product_id and quantity
      */
-    public function getPackItems(int $productId): array
+    public function get_pack_items(int $product_id): array
     {
         // PrestaShop stores pack items in stock_availables or via the product's associations
-        $product = $this->getProduct($productId);
+        $product = $this->get_product($product_id);
 
         if (!$product || empty($product['associations']['product_bundle'])) {
             return [];
@@ -230,9 +235,9 @@ class PrestaShopClient
      * @param int $productId
      * @return bool
      */
-    public function isProductPack(int $productId): bool
+    public function is_product_pack(int $product_id): bool
     {
-        $product = $this->getProduct($productId);
+        $product = $this->get_product($product_id);
 
         if (!$product) {
             return false;
@@ -252,9 +257,9 @@ class PrestaShopClient
      * @param int $productId
      * @return bool
      */
-    public function isProductVirtual(int $productId): bool
+    public function is_product_virtual(int $product_id): bool
     {
-        $product = $this->getProduct($productId);
+        $product = $this->get_product($product_id);
 
         if (!$product) {
             return false;
@@ -272,12 +277,12 @@ class PrestaShopClient
      * @param int $productId
      * @return array|null
      */
-    public function getProductDownloadInfo(int $productId): ?array
+    public function get_product_download_info(int $product_id): ?array
     {
         $response = $this->request('product_downloads', [
             'display' => 'full',
             'output_format' => 'JSON',
-            'filter[id_product]' => $productId,
+            'filter[id_product]' => $product_id,
         ]);
 
         if (!$response || empty($response['product_downloads'])) {
@@ -296,9 +301,9 @@ class PrestaShopClient
      * @param int $productId
      * @return array
      */
-    public function getProductTypeInfo(int $productId): array
+    public function get_product_type_info(int $product_id): array
     {
-        $product = $this->getProduct($productId);
+        $product = $this->get_product($product_id);
 
         if (!$product) {
             return [
@@ -310,31 +315,31 @@ class PrestaShopClient
             ];
         }
 
-        $isVirtual = ($product['is_virtual'] ?? '0') === '1';
-        $isPack = ($product['type'] ?? '') === 'pack' || ($product['cache_is_pack'] ?? '0') === '1';
-        $hasCombinations = !empty($product['associations']['combinations']);
+        $is_virtual = ($product['is_virtual'] ?? '0') === '1';
+        $is_pack = ($product['type'] ?? '') === 'pack' || ($product['cache_is_pack'] ?? '0') === '1';
+        $has_combinations = !empty($product['associations']['combinations']);
 
         // Check if there's a downloadable file
-        $downloadInfo = $isVirtual ? $this->getProductDownloadInfo($productId) : null;
-        $isDownloadable = $downloadInfo !== null && !empty($downloadInfo['filename']);
+        $download_info = $is_virtual ? $this->get_product_download_info($product_id) : null;
+        $is_downloadable = $download_info !== null && !empty($download_info['filename']);
 
         // Determine primary type
         $type = 'simple';
-        if ($isPack) {
+        if ($is_pack) {
             $type = 'pack';
-        } elseif ($hasCombinations) {
+        } elseif ($has_combinations) {
             $type = 'combinations';
-        } elseif ($isVirtual) {
-            $type = $isDownloadable ? 'downloadable' : 'service';
+        } elseif ($is_virtual) {
+            $type = $is_downloadable ? 'downloadable' : 'service';
         }
 
         return [
             'type' => $type,
-            'is_virtual' => $isVirtual,
-            'is_pack' => $isPack,
-            'has_combinations' => $hasCombinations,
-            'is_downloadable' => $isDownloadable,
-            'download_info' => $downloadInfo,
+            'is_virtual' => $is_virtual,
+            'is_pack' => $is_pack,
+            'has_combinations' => $has_combinations,
+            'is_downloadable' => $is_downloadable,
+            'download_info' => $download_info,
         ];
     }
 
@@ -348,12 +353,12 @@ class PrestaShopClient
      * @param int $productId
      * @return array Array of combinations
      */
-    public function getProductCombinations(int $productId): array
+    public function get_product_combinations(int $product_id): array
     {
         $response = $this->request('combinations', [
             'display' => 'full',
             'output_format' => 'JSON',
-            'filter[id_product]' => $productId,
+            'filter[id_product]' => $product_id,
         ]);
 
         if (!$response || !isset($response['combinations'])) {
@@ -369,9 +374,9 @@ class PrestaShopClient
      * @param int $combinationId
      * @return array|null
      */
-    public function getCombination(int $combinationId): ?array
+    public function get_combination(int $combination_id): ?array
     {
-        $response = $this->request("combinations/{$combinationId}", [
+        $response = $this->request("combinations/{$combination_id}", [
             'display' => 'full',
             'output_format' => 'JSON',
         ]);
@@ -389,9 +394,9 @@ class PrestaShopClient
      * @param int $productId
      * @return bool
      */
-    public function hasProductCombinations(int $productId): bool
+    public function has_product_combinations(int $product_id): bool
     {
-        $product = $this->getProduct($productId);
+        $product = $this->get_product($product_id);
 
         if (!$product) {
             return false;
@@ -411,9 +416,9 @@ class PrestaShopClient
      * @param int $attributeId
      * @return array|null
      */
-    public function getProductAttribute(int $attributeId): ?array
+    public function get_product_attribute(int $attribute_id): ?array
     {
-        $response = $this->request("product_option_values/{$attributeId}", [
+        $response = $this->request("product_option_values/{$attribute_id}", [
             'display' => 'full',
             'output_format' => 'JSON',
         ]);
@@ -431,9 +436,9 @@ class PrestaShopClient
      * @param int $attributeGroupId
      * @return array|null
      */
-    public function getProductAttributeGroup(int $attributeGroupId): ?array
+    public function get_product_attribute_group(int $attribute_group_id): ?array
     {
-        $response = $this->request("product_options/{$attributeGroupId}", [
+        $response = $this->request("product_options/{$attribute_group_id}", [
             'display' => 'full',
             'output_format' => 'JSON',
         ]);
@@ -450,7 +455,7 @@ class PrestaShopClient
      *
      * @return array
      */
-    public function getProductAttributeGroups(): array
+    public function get_product_attribute_groups(): array
     {
         $response = $this->request('product_options', [
             'display' => 'full',
@@ -472,36 +477,36 @@ class PrestaShopClient
      * @param array $combination Combination data
      * @return array
      */
-    public function getCombinationAttributes(array $combination): array
+    public function get_combination_attributes(array $combination): array
     {
         $attributes = [];
 
         // Combinations have associations with product_option_values
-        $attrValues = $combination['associations']['product_option_values'] ?? [];
+        $attr_values = $combination['associations']['product_option_values'] ?? [];
 
-        foreach ($attrValues as $attrValue) {
-            $attrId = (int) ($attrValue['id'] ?? 0);
-            if ($attrId === 0) {
+        foreach ($attr_values as $attr_value) {
+            $attr_id = (int) ($attr_value['id'] ?? 0);
+            if ($attr_id === 0) {
                 continue;
             }
 
             // Get the attribute value details
-            $attrDetail = $this->getProductAttribute($attrId);
-            if (!$attrDetail) {
+            $attr_detail = $this->get_product_attribute($attr_id);
+            if (!$attr_detail) {
                 continue;
             }
 
             // Get the attribute group (color, size, etc.)
-            $groupId = (int) ($attrDetail['id_attribute_group'] ?? 0);
-            $attrGroup = $this->getProductAttributeGroup($groupId);
+            $group_id = (int) ($attr_detail['id_attribute_group'] ?? 0);
+            $attr_group = $this->get_product_attribute_group($group_id);
 
             // Get attribute name (localized)
-            $attrName = $this->getLocalizedValue($attrDetail['name'] ?? '');
-            $groupName = $this->getLocalizedValue($attrGroup['name'] ?? 'attribute');
+            $attr_name = $this->get_localized_value($attr_detail['name'] ?? '');
+            $group_name = $this->get_localized_value($attr_group['name'] ?? 'attribute');
 
             // Normalize the group name for Schema.org mapping
-            $normalizedGroup = $this->normalizeAttributeName($groupName);
-            $attributes[$normalizedGroup] = $attrName;
+            $normalized_group = $this->normalize_attribute_name($group_name);
+            $attributes[$normalized_group] = $attr_name;
         }
 
         return $attributes;
@@ -516,7 +521,7 @@ class PrestaShopClient
      * @param string $name
      * @return string
      */
-    private function normalizeAttributeName(string $name): string
+    private function normalize_attribute_name(string $name): string
     {
         $name = strtolower(trim($name));
 
@@ -561,16 +566,16 @@ class PrestaShopClient
      * @param int $langId Preferred language ID (0 = first available)
      * @return string
      */
-    private function getLocalizedValue(mixed $value, int $langId = 0): string
+    private function get_localized_value(mixed $value, int $lang_id = 0): string
     {
         if (!is_array($value)) {
             return (string) $value;
         }
 
         // Multi-language format: [{'id': langId, 'value': 'text'}, ...]
-        if ($langId > 0) {
+        if ($lang_id > 0) {
             foreach ($value as $lang) {
-                if (isset($lang['id']) && (int) $lang['id'] === $langId && !empty($lang['value'])) {
+                if (isset($lang['id']) && (int) $lang['id'] === $lang_id && !empty($lang['value'])) {
                     return $lang['value'];
                 }
             }
@@ -595,7 +600,7 @@ class PrestaShopClient
      */
     private function request(string $endpoint, array $params = []): ?array
     {
-        $url = $this->apiUrl . '/' . ltrim($endpoint, '/');
+        $url = $this->api_url . '/' . ltrim($endpoint, '/');
 
         if (!empty($params)) {
             $url .= '?' . http_build_query($params);
@@ -611,7 +616,7 @@ class PrestaShopClient
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => [
-                'Authorization: Basic ' . base64_encode($this->apiKey . ':'),
+                'Authorization: Basic ' . base64_encode($this->api_key . ':'),
                 'Accept: application/json',
             ],
             CURLOPT_SSL_VERIFYPEER => true,
@@ -619,7 +624,7 @@ class PrestaShopClient
         ]);
 
         $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
 
         curl_close($ch);
@@ -631,9 +636,9 @@ class PrestaShopClient
             return null;
         }
 
-        if ($httpCode !== 200) {
+        if ($http_code !== 200) {
             if ($this->debug) {
-                echo "[ERROR] HTTP {$httpCode}: {$response}\n";
+                echo "[ERROR] HTTP {$http_code}: {$response}\n";
             }
             return null;
         }
@@ -655,7 +660,7 @@ class PrestaShopClient
      *
      * @return bool
      */
-    public function testConnection(): bool
+    public function test_connection(): bool
     {
         $response = $this->request('', ['output_format' => 'JSON']);
         return $response !== null;

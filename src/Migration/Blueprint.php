@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Blueprint for Migrations
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -27,6 +32,9 @@ class Blueprint
     
     /** @var ForeignKeyDefinition[] */
     protected array $foreign_keys = [];
+
+    /** @var array<int, array{name: string, expression: string}> Table-level CHECK constraints */
+    protected array $checks = [];
     
     /** @var array Columns to drop */
     protected array $drop_columns = [];
@@ -392,7 +400,12 @@ class Blueprint
     }
 
     /**
-     * Add full-text index (MySQL)
+     * Add a full-text search index over `$columns` — a native `FULLTEXT
+     * INDEX` on MySQL, a GIN index over `to_tsvector(...)` on
+     * PostgreSQL/Supabase, and an external-content FTS5 virtual table plus
+     * sync triggers on SQLite (which has no full-text index at all — see
+     * `fulltext_index_sql()`). Search it with `Operators\fulltext_match()`.
+     *
      * @param string|array $columns
      */
     public function fulltext($columns, ?string $name = null): self
@@ -404,6 +417,22 @@ class Blueprint
             'name' => $name,
             'columns' => $columns,
         ];
+        return $this;
+    }
+
+    /**
+     * Add a table-level `CHECK` constraint: `$expression` is rendered
+     * verbatim inside `CHECK (...)`.
+     *
+     * Reach for this over a column's own `->check()` when the rule spans
+     * more than one column — `$table->check('start_dt < end_dt')` cannot be
+     * attached to either column alone, only to the row. Refused when this
+     * blueprint is building `ALTER TABLE` for SQLite — see `to_alter_sql()`.
+     */
+    public function check(string $expression, ?string $name = null): self
+    {
+        $name = $name ?? $this->table . '_check_' . (count($this->checks) + 1);
+        $this->checks[] = ['name' => $name, 'expression' => $expression];
         return $this;
     }
 
@@ -555,7 +584,13 @@ class Blueprint
         foreach ($this->foreign_keys as $fk) {
             $lines[] = '    ' . $fk->to_sql($this->table, $this->dialect);
         }
-        
+
+        // Table-level CHECK constraints
+        foreach ($this->checks as $check) {
+            $name = $this->quote_identifier($check['name'], $this->dialect);
+            $lines[] = "    CONSTRAINT {$name} CHECK ({$check['expression']})";
+        }
+
         $sql = "CREATE TABLE IF NOT EXISTS {$table_name} (\n";
         $sql .= implode(",\n", $lines);
         $sql .= "\n)";
@@ -584,20 +619,106 @@ class Blueprint
     {
         $statements = [];
         $table_name = $this->quote_identifier($this->table, $this->dialect);
-        
+
         foreach ($this->indexes as $index) {
             if ($index['type'] === 'UNIQUE') {
                 continue; // Handled in CREATE TABLE
             }
-            
+
+            if ($index['type'] === 'FULLTEXT') {
+                $statements = array_merge($statements, $this->fulltext_index_sql($index['name'], $index['columns']));
+                continue;
+            }
+
             $name = $this->quote_identifier($index['name'], $this->dialect);
             $cols = array_map(fn($c) => $this->quote_identifier($c, $this->dialect), $index['columns']);
-            
-            $type = $index['type'] === 'FULLTEXT' ? 'FULLTEXT INDEX' : 'INDEX';
-            $statements[] = "CREATE {$type} {$name} ON {$table_name} (" . implode(', ', $cols) . ')';
+
+            $statements[] = "CREATE INDEX {$name} ON {$table_name} (" . implode(', ', $cols) . ')';
         }
-        
+
         return $statements;
+    }
+
+    /**
+     * The statement(s) that create one `fulltext()` index — dialect-specific
+     * the same way `Schema\Table::fulltext_index_sql()` is, for the same
+     * reason: there is no `FULLTEXT INDEX` syntax on PostgreSQL or SQLite at
+     * all. Before this, `fulltext()` on either of those dialects rendered
+     * MySQL's syntax anyway and failed at execution — silently, since
+     * nothing here ever ran it against a real PostgreSQL/SQLite server
+     * to notice.
+     *
+     * @param array<int, string> $columns
+     * @return array<int, string>
+     */
+    protected function fulltext_index_sql(string $name, array $columns): array
+    {
+        $table_name = $this->quote_identifier($this->table, $this->dialect);
+        $cols = array_map(fn($c) => $this->quote_identifier($c, $this->dialect), $columns);
+
+        if ($this->dialect === 'mysql') {
+            $idx_name = $this->quote_identifier($name, $this->dialect);
+
+            return ["CREATE FULLTEXT INDEX {$idx_name} ON {$table_name} (" . implode(', ', $cols) . ')'];
+        }
+
+        if ($this->dialect === 'postgresql' || $this->dialect === 'supabase') {
+            $idx_name = $this->quote_identifier($name, $this->dialect);
+            $concat   = implode(" || ' ' || ", $cols);
+
+            return ["CREATE INDEX {$idx_name} ON {$table_name} USING GIN (to_tsvector('english', {$concat}))"];
+        }
+
+        // sqlite — see Schema\Table::fulltext_index_sql()'s docblock for why
+        // this is a virtual table plus sync triggers rather than an index.
+        $pk_col_name = $this->single_primary_key_column();
+        $pk_col      = $this->quote_identifier($pk_col_name, $this->dialect);
+        $fts_table   = $this->quote_identifier($this->table . '_fts', $this->dialect);
+        $fts_cols    = implode(', ', $cols);
+        $new_cols    = implode(', ', array_map(fn($c) => 'new.' . $this->quote_identifier($c, $this->dialect), $columns));
+        $old_cols    = implode(', ', array_map(fn($c) => 'old.' . $this->quote_identifier($c, $this->dialect), $columns));
+
+        return [
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {$fts_table} USING fts5({$fts_cols}, "
+                . "content='{$this->table}', content_rowid='{$pk_col_name}')",
+
+            'CREATE TRIGGER ' . $this->quote_identifier($name . '_ai', $this->dialect) . " AFTER INSERT ON {$table_name} BEGIN "
+                . "INSERT INTO {$fts_table}(rowid, {$fts_cols}) VALUES (new.{$pk_col}, {$new_cols}); END",
+
+            'CREATE TRIGGER ' . $this->quote_identifier($name . '_ad', $this->dialect) . " AFTER DELETE ON {$table_name} BEGIN "
+                . "INSERT INTO {$fts_table}({$fts_table}, rowid, {$fts_cols}) VALUES('delete', old.{$pk_col}, {$old_cols}); END",
+
+            'CREATE TRIGGER ' . $this->quote_identifier($name . '_au', $this->dialect) . " AFTER UPDATE ON {$table_name} BEGIN "
+                . "INSERT INTO {$fts_table}({$fts_table}, rowid, {$fts_cols}) VALUES('delete', old.{$pk_col}, {$old_cols}); "
+                . "INSERT INTO {$fts_table}(rowid, {$fts_cols}) VALUES (new.{$pk_col}, {$new_cols}); END",
+        ];
+    }
+
+    /**
+     * The one column carrying this blueprint's primary key — whether
+     * declared as `->primary([...])` (composite, but must resolve to
+     * exactly one column here) or as a single column's own `->primary()`.
+     * Raised, not defaulted, when that is not exactly one column: FTS5's
+     * `content_rowid` needs SQLite's rowid alias, and a composite or absent
+     * key gives it none to use.
+     */
+    protected function single_primary_key_column(): string
+    {
+        $pk_columns = !empty($this->primary_columns)
+            ? $this->primary_columns
+            : array_values(array_map(
+                fn ($c) => $c->get_name(),
+                array_filter($this->columns, fn ($c) => $c->is_primary())
+            ));
+
+        if (count($pk_columns) !== 1) {
+            throw new \RuntimeException(
+                "fulltext() on SQLite needs the table to have exactly one, single-column primary key — "
+                . "'{$this->table}' has " . count($pk_columns) . '.'
+            );
+        }
+
+        return $pk_columns[0];
     }
 
     /**
@@ -670,14 +791,18 @@ class Blueprint
         
         // Add indexes
         foreach ($this->indexes as $index) {
+            if ($index['type'] === 'FULLTEXT') {
+                $statements = array_merge($statements, $this->fulltext_index_sql($index['name'], $index['columns']));
+                continue;
+            }
+
             $name = $this->quote_identifier($index['name'], $this->dialect);
             $cols = array_map(fn($c) => $this->quote_identifier($c, $this->dialect), $index['columns']);
-            
+
             if ($index['type'] === 'UNIQUE') {
                 $statements[] = "CREATE UNIQUE INDEX {$name} ON {$table_name} (" . implode(', ', $cols) . ')';
             } else {
-                $type = $index['type'] === 'FULLTEXT' ? 'FULLTEXT INDEX' : 'INDEX';
-                $statements[] = "CREATE {$type} {$name} ON {$table_name} (" . implode(', ', $cols) . ')';
+                $statements[] = "CREATE INDEX {$name} ON {$table_name} (" . implode(', ', $cols) . ')';
             }
         }
         
@@ -685,7 +810,28 @@ class Blueprint
         foreach ($this->foreign_keys as $fk) {
             $statements[] = $fk->to_add_sql($this->table, $this->dialect);
         }
-        
+
+        // Add CHECK constraints. SQLite has no `ALTER TABLE ... ADD
+        // CONSTRAINT` at all — not a version gap like DROP COLUMN, categorical
+        // — so this is refused outright rather than emitting SQL that would
+        // fail on every version. Declare the check on Schema::create() for a
+        // new table; an existing one needs the rebuild-and-copy Schema.php's
+        // own DROP COLUMN guard already describes.
+        if (!empty($this->checks) && $this->dialect === 'sqlite') {
+            throw new \RuntimeException(
+                'SQLite has no ALTER TABLE ... ADD CONSTRAINT, for a CHECK or anything else. '
+                . 'Adding one to an existing table means rebuilding it: CREATE the new shape, '
+                . 'copy the rows across, drop the old table, rename. Declare the check on '
+                . 'Schema::create() instead if this is a new table.'
+            );
+        }
+
+        foreach ($this->checks as $check) {
+            $table_quoted = $this->quote_identifier($this->table, $this->dialect);
+            $name = $this->quote_identifier($check['name'], $this->dialect);
+            $statements[] = "ALTER TABLE {$table_quoted} ADD CONSTRAINT {$name} CHECK ({$check['expression']})";
+        }
+
         return $statements;
     }
 
@@ -746,5 +892,14 @@ class Blueprint
     public function get_foreign_keys(): array
     {
         return $this->foreign_keys;
+    }
+
+    /**
+     * Get all table-level CHECK constraints
+     * @return array<int, array{name: string, expression: string}>
+     */
+    public function get_checks(): array
+    {
+        return $this->checks;
     }
 }

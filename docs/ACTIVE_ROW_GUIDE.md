@@ -12,6 +12,7 @@ ActiveRow provides a lightweight active record pattern for PHP. Row objects beha
 - [Transient Attributes](#transient-attributes)
 - [Custom Methods](#custom-methods)
 - [Persistence](#persistence)
+  - [Composite primary keys](#composite-primary-keys)
 - [Available Traits](#available-traits)
 - [JSON Serialization](#json-serialization)
 
@@ -362,6 +363,87 @@ $user = UserRow::upsert(
     ['name' => 'Upserted User']                // Set these values
 );
 ```
+
+### Fluent queries with `query()`
+
+`find_all()`/`find_one()` above take every condition as one options array. `query()` is the same
+`TableQuery` (`$dm->query_table($table)`) exposed as a chain instead, ending in `ActiveRow` instances:
+
+```php
+$admins = UserRow::query()
+    ->where(eq($users->role, 'admin'))
+    ->order_by(desc($users->id))
+    ->with(['posts' => true])
+    ->find_many();
+```
+
+`find_many()`/`find_all()`/`all()` are the same call under three names (`TableQuery`'s own
+`find_many()`, and the two conventions this package's finders elsewhere use); `find_first()`/
+`find_one()`/`first()`/`one()` are the same four-way choice for a single row. `find($id)` looks up by
+primary key. None of `find_all()`/`find()`/`find_one()` above change — `query()` is a second way to
+reach the same query, not a replacement.
+
+`where()` called more than once replaces rather than combines — build one expression with
+`and_()`/`or_()`/`not_()` from `Italix\Orm\Operators` and pass it to a single `where()` call when more
+than one condition is needed. `order_by()` is the exception: repeated calls accumulate.
+
+### Relation classes are derived, not only declared
+
+```php
+class UserRow extends ActiveRow
+{
+    use Persistable;
+    // No $relation_classes override needed for this to work:
+}
+```
+
+A relation eager-loaded with `with(['posts' => true])` wraps into `PostRow` automatically **if**
+`PostRow::set_persistence($dm, $posts_table)` was called somewhere — `RelationsRegistry` already
+knows `posts` targets the `$posts_table` declared in `define_relations()`, and `ActiveRowRegistry`
+(built for this) says which `ActiveRow` class is registered for that table. Declaring
+`protected static $relation_classes = ['posts' => PostRow::class]` still works and still wins when
+present; it is optional now rather than required for every relation.
+
+Not attempted for a `one_polymorphic` relation, where a row's parent can genuinely be more than one
+type (a `commentable` that is a `Post` *or* a `Video`) — there `$relation_classes`, or the explicit
+`$class` argument to `relation($name, $class)`, is still the only way to say which class to wrap it
+in. `many_polymorphic` (a single concrete target type) is derived like any ordinary relation.
+
+### Composite primary keys
+
+`static::$primary_key` accepts an array as well as the ordinary string — `save()`, `delete()`,
+`refresh()`, `get_key()` and `SoftDeletes::force_delete()` all follow it correctly, ANDing every
+column together wherever a `WHERE` is built:
+
+```php
+class OrderItemRow extends ActiveRow
+{
+    use Persistable;
+
+    protected static $primary_key = ['tenant_id', 'order_id'];
+}
+
+$item = OrderItemRow::create(['tenant_id' => 1, 'order_id' => 100, 'sku' => 'WIDGET']);
+$item['sku'] = 'GADGET';
+$item->save();               // UPDATE … WHERE tenant_id = 1 AND order_id = 100 — both columns, ANDed
+$item->get_key();            // ['tenant_id' => 1, 'order_id' => 100]
+
+OrderItemRow::find(['tenant_id' => 1, 'order_id' => 100]);   // same array shape find() already took
+```
+
+A composite key has no auto-increment id — every column of it must already be present in the data a
+caller gives `create()`/`make()`. That is also why `exists()` cannot rely on "does the primary key
+column have a value" the way a single auto-increment key's absence-until-INSERT already implied:
+`exists()` additionally requires `$original` to be non-empty (the same "nothing has persisted since
+this instance was made" signal `get_dirty()` already uses), so a freshly `make()`'d row is never
+mistaken for an existing one just because it already carries its key.
+
+`get_key_name(): string` is unchanged for the ordinary single-column case, and raises clearly on a
+composite one — there is no single name to return — pointing at `get_key_names(): array`, which works
+either way (`['id']` for a single-column key, every column for a composite one, in declared order).
+
+Composes with `Table::optimistic_locking()` (see the main README) the same way a single-column key
+does — `expect_version()`'s `WHERE` gets every composite column ANDed in alongside the version check.
 
 ## Available Traits
 

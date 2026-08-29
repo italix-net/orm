@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Order Model (Delegate)
  *
@@ -417,17 +422,17 @@ class Order extends ActiveRow
         }
 
         // Billing address
-        $billingAddress = $this->billing_address();
-        if ($billingAddress) {
-            $schema['billingAddress'] = $billingAddress->to_schema_org();
+        $billing_address = $this->billing_address();
+        if ($billing_address) {
+            $schema['billingAddress'] = $billing_address->to_schema_org();
         }
 
         // Delivery (we put it directly on order for simplicity)
-        $deliveryAddress = $this->delivery_address();
-        if ($deliveryAddress) {
+        $delivery_address = $this->delivery_address();
+        if ($delivery_address) {
             $schema['orderDelivery'] = [
                 '@type' => 'ParcelDelivery',
-                'deliveryAddress' => $deliveryAddress->to_schema_org(),
+                'deliveryAddress' => $delivery_address->to_schema_org(),
             ];
         }
 

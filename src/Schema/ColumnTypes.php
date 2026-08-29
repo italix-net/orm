@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Column Type Factory Functions
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -175,6 +180,48 @@ function numeric(int $precision = 10, int $scale = 2): Column
 }
 
 /**
+ * Create an ENUM column: the value must be one of `$values`.
+ *
+ * Native `ENUM(...)` on MySQL. PostgreSQL and SQLite have no equivalent
+ * column type, so there it becomes `VARCHAR(255)` plus a `CHECK (col IN
+ * (...))` carrying the same values — enforced identically, one SQL type this
+ * package does not have to introspect back on those two dialects.
+ *
+ * A `BackedEnum` class name is accepted in place of the array — the allowed
+ * values are read from `$class::cases()`, once, instead of being written a
+ * second time by hand where the DDL is declared:
+ *
+ * ```php
+ * enum OrderStatus: string { case Draft = 'draft'; case Placed = 'placed'; }
+ *
+ * 'status' => enum(OrderStatus::class)->not_null(),
+ * ```
+ *
+ * A column declared this way also hydrates: reading it back gives an
+ * `OrderStatus` instance, not the raw string — see `Italix\Orm\Casts\Cast`.
+ * A plain `enum(['draft', 'placed'])` has no PHP type to hydrate into and
+ * stays a string, exactly as before.
+ *
+ * @param string[]|class-string<\BackedEnum> $values
+ */
+function enum($values): Column
+{
+    if (is_string($values)) {
+        if (!enum_exists($values) || !is_subclass_of($values, \BackedEnum::class)) {
+            throw new \InvalidArgumentException(
+                "enum(): '{$values}' is not a backed enum (enum ... : string|int { ... })."
+            );
+        }
+
+        $cases = array_map(static fn ($case) => $case->value, $values::cases());
+
+        return (new Column('ENUM'))->enum_values($cases)->enum_class($values);
+    }
+
+    return (new Column('ENUM'))->enum_values($values);
+}
+
+/**
  * Create a BLOB column
  */
 function blob(): Column
@@ -232,4 +279,60 @@ function sqlite_table(string $name, array $columns): Table
 function supabase_table(string $name, array $columns): Table
 {
     return new Table($name, $columns, 'postgresql');
+}
+
+// ============================================
+// View Factory Functions
+// ============================================
+
+/**
+ * Create a MySQL/MariaDB view schema
+ */
+function mysql_view(string $name, array $columns = []): View
+{
+    return new View($name, $columns, 'mysql');
+}
+
+/**
+ * Create a PostgreSQL view schema
+ */
+function pg_view(string $name, array $columns = []): View
+{
+    return new View($name, $columns, 'postgresql');
+}
+
+/**
+ * Create a SQLite view schema
+ */
+function sqlite_view(string $name, array $columns = []): View
+{
+    return new View($name, $columns, 'sqlite');
+}
+
+/**
+ * Create a Supabase view schema
+ */
+function supabase_view(string $name, array $columns = []): View
+{
+    return new View($name, $columns, 'postgresql');
+}
+
+// ============================================
+// Materialized View Factory Functions
+// ============================================
+
+/**
+ * Create a PostgreSQL materialized view schema
+ */
+function pg_materialized_view(string $name, array $columns = []): MaterializedView
+{
+    return new MaterializedView($name, $columns, 'postgresql');
+}
+
+/**
+ * Create a Supabase materialized view schema
+ */
+function supabase_materialized_view(string $name, array $columns = []): MaterializedView
+{
+    return new MaterializedView($name, $columns, 'postgresql');
 }

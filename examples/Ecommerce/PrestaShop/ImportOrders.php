@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * PrestaShop Order Importer
  *
@@ -56,17 +61,17 @@ class ImportOrders
     private DataManager $dm;
     private Schema $schema;
     private array $config;
-    private array $productCache = [];
-    private array $customerCache = [];
-    private array $addressCache = [];
+    private array $product_cache = [];
+    private array $customer_cache = [];
+    private array $address_cache = [];
 
     /**
      * Import statistics
      */
-    private int $ordersImported = 0;
-    private int $ordersSkipped = 0;
-    private int $productsCreated = 0;
-    private int $itemsCreated = 0;
+    private int $orders_imported = 0;
+    private int $orders_skipped = 0;
+    private int $products_created = 0;
+    private int $items_created = 0;
     private array $errors = [];
 
     public function __construct(array $config)
@@ -81,17 +86,17 @@ class ImportOrders
         );
 
         // Initialize local database
-        $this->initDatabase();
+        $this->init_database();
     }
 
     /**
      * Initialize the local database connection
      */
-    private function initDatabase(): void
+    private function init_database(): void
     {
-        $dbType = $this->config['db_type'] ?? 'sqlite';
+        $db_type = $this->config['db_type'] ?? 'sqlite';
 
-        switch ($dbType) {
+        switch ($db_type) {
             case 'mysql':
                 $driver = Driver::mysql(
                     $this->config['db_host'],
@@ -103,7 +108,7 @@ class ImportOrders
                 break;
 
             case 'postgresql':
-                $driver = Driver::postgresql(
+                $driver = Driver::postgres(
                     $this->config['db_host'],
                     $this->config['db_user'],
                     $this->config['db_password'],
@@ -114,8 +119,8 @@ class ImportOrders
 
             case 'sqlite':
             default:
-                $dbPath = $this->config['db_sqlite_path'] ?? __DIR__ . '/ecommerce.db';
-                $driver = Driver::sqlite($dbPath);
+                $db_path = $this->config['db_sqlite_path'] ?? __DIR__ . '/ecommerce.db';
+                $driver = Driver::sqlite($db_path);
                 break;
         }
 
@@ -147,43 +152,43 @@ class ImportOrders
      * @param int|null $limit Override orders limit
      * @return array Import statistics
      */
-    public function run(?int $minOrderId = null, ?int $limit = null): array
+    public function run(?int $min_order_id = null, ?int $limit = null): array
     {
-        $minOrderId = $minOrderId ?? ($this->config['min_order_id'] ?? 1);
+        $min_order_id = $min_order_id ?? ($this->config['min_order_id'] ?? 1);
         $limit = $limit ?? ($this->config['orders_limit'] ?? 100);
 
         $this->log("Starting PrestaShop order import...");
-        $this->log("  Min Order ID: {$minOrderId}");
+        $this->log("  Min Order ID: {$min_order_id}");
         $this->log("  Limit: {$limit}");
 
         // Test connection
-        if (!$this->client->testConnection()) {
+        if (!$this->client->test_connection()) {
             $this->error("Failed to connect to PrestaShop API");
-            return $this->getStats();
+            return $this->get_stats();
         }
 
         $this->log("Connected to PrestaShop API");
 
         // Fetch orders
-        $orders = $this->client->getOrders($minOrderId, $limit);
+        $orders = $this->client->get_orders($min_order_id, $limit);
         $this->log("Fetched " . count($orders) . " orders from PrestaShop");
 
-        foreach ($orders as $psOrder) {
+        foreach ($orders as $ps_order) {
             try {
-                $this->importOrder($psOrder);
+                $this->import_order($ps_order);
             } catch (\Exception $e) {
-                $this->error("Failed to import order #{$psOrder['id']}: " . $e->getMessage());
+                $this->error("Failed to import order #{$ps_order['id']}: " . $e->getMessage());
             }
         }
 
         $this->log("\nImport completed!");
-        $this->log("  Orders imported: {$this->ordersImported}");
-        $this->log("  Orders skipped: {$this->ordersSkipped}");
-        $this->log("  Products created: {$this->productsCreated}");
-        $this->log("  Items created: {$this->itemsCreated}");
+        $this->log("  Orders imported: {$this->orders_imported}");
+        $this->log("  Orders skipped: {$this->orders_skipped}");
+        $this->log("  Products created: {$this->products_created}");
+        $this->log("  Items created: {$this->items_created}");
         $this->log("  Errors: " . count($this->errors));
 
-        return $this->getStats();
+        return $this->get_stats();
     }
 
     /**
@@ -191,68 +196,68 @@ class ImportOrders
      *
      * @param array $psOrder PrestaShop order data
      */
-    private function importOrder(array $psOrder): void
+    private function import_order(array $ps_order): void
     {
-        $psOrderId = (int) $psOrder['id'];
-        $psOrderRef = $psOrder['reference'] ?? "PS-{$psOrderId}";
+        $ps_order_id = (int) $ps_order['id'];
+        $ps_order_ref = $ps_order['reference'] ?? "PS-{$ps_order_id}";
 
         // Check if order already exists
-        if ($this->orderExists($psOrderRef)) {
-            $this->log("  Skipping order #{$psOrderId} ({$psOrderRef}) - already imported");
-            $this->ordersSkipped++;
+        if ($this->order_exists($ps_order_ref)) {
+            $this->log("  Skipping order #{$ps_order_id} ({$ps_order_ref}) - already imported");
+            $this->orders_skipped++;
             return;
         }
 
-        $this->log("  Importing order #{$psOrderId} ({$psOrderRef})...");
+        $this->log("  Importing order #{$ps_order_id} ({$ps_order_ref})...");
 
         // Get customer info from PrestaShop
-        $psCustomer = $this->getCustomer((int) $psOrder['id_customer']);
+        $ps_customer = $this->get_customer((int) $ps_order['id_customer']);
 
         // Get addresses from PrestaShop
-        $psShippingAddress = $this->getAddress((int) $psOrder['id_address_delivery']);
-        $psBillingAddress = $this->getAddress((int) $psOrder['id_address_invoice']);
+        $ps_shipping_address = $this->get_address((int) $ps_order['id_address_delivery']);
+        $ps_billing_address = $this->get_address((int) $ps_order['id_address_invoice']);
 
         // Get or create customer (Person or Organization based on VAT in billing address)
-        $customer = $this->getOrCreateCustomer($psCustomer, $psBillingAddress);
+        $customer = $this->get_or_create_customer($ps_customer, $ps_billing_address);
 
         // Create postal addresses
-        $billingAddress = $this->createPostalAddress($psBillingAddress, $customer, true, false);
-        $deliveryAddress = $this->createPostalAddress($psShippingAddress, $customer, false, true);
+        $billing_address = $this->create_postal_address($ps_billing_address, $customer, true, false);
+        $delivery_address = $this->create_postal_address($ps_shipping_address, $customer, false, true);
 
         // Map order status
-        $orderStatus = $this->mapOrderStatus((int) $psOrder['current_state']);
+        $order_status = $this->map_order_status((int) $ps_order['current_state']);
 
         // Create the order with customer and addresses
         $order = Thing::create_order_for_customer(
             $customer,
-            $billingAddress,
-            $deliveryAddress,
+            $billing_address,
+            $delivery_address,
             [
-                'name' => "Order {$psOrderRef}",
-                'description' => "Imported from PrestaShop (ID: {$psOrderId})",
+                'name' => "Order {$ps_order_ref}",
+                'description' => "Imported from PrestaShop (ID: {$ps_order_id})",
             ],
             [
-                'order_number' => $psOrderRef,
-                'order_status' => $orderStatus,
-                'order_date' => $psOrder['date_add'] ?? date('Y-m-d H:i:s'),
-                'subtotal' => (float) ($psOrder['total_products'] ?? 0),
-                'tax' => (float) ($psOrder['total_products_wt'] ?? 0) - (float) ($psOrder['total_products'] ?? 0),
-                'shipping_cost' => (float) ($psOrder['total_shipping'] ?? 0),
-                'discount' => (float) ($psOrder['total_discounts'] ?? 0),
-                'total_price' => (float) ($psOrder['total_paid'] ?? 0),
+                'order_number' => $ps_order_ref,
+                'order_status' => $order_status,
+                'order_date' => $ps_order['date_add'] ?? date('Y-m-d H:i:s'),
+                'subtotal' => (float) ($ps_order['total_products'] ?? 0),
+                'tax' => (float) ($ps_order['total_products_wt'] ?? 0) - (float) ($ps_order['total_products'] ?? 0),
+                'shipping_cost' => (float) ($ps_order['total_shipping'] ?? 0),
+                'discount' => (float) ($ps_order['total_discounts'] ?? 0),
+                'total_price' => (float) ($ps_order['total_paid'] ?? 0),
                 'currency' => $this->config['default_currency'] ?? 'EUR',
-                'payment_method' => $psOrder['payment'] ?? 'Unknown',
-                'payment_status' => $this->mapPaymentStatus($psOrder),
+                'payment_method' => $ps_order['payment'] ?? 'Unknown',
+                'payment_status' => $this->map_payment_status($ps_order),
             ]
         );
 
-        $this->ordersImported++;
+        $this->orders_imported++;
 
         // Import order items
-        $orderDetails = $psOrder['associations']['order_rows'] ?? [];
+        $order_details = $ps_order['associations']['order_rows'] ?? [];
 
-        foreach ($orderDetails as $item) {
-            $this->importOrderItem($order, $item);
+        foreach ($order_details as $item) {
+            $this->import_order_item($order, $item);
         }
 
         $this->log("    Customer: {$customer->display_name()} (" . ($customer->is_organization() ? 'Organization' : 'Person') . ")");
@@ -265,66 +270,66 @@ class ImportOrders
      * @param array $psBillingAddress PrestaShop billing address (to check for VAT)
      * @return Customer
      */
-    private function getOrCreateCustomer(array $psCustomer, array $psBillingAddress): Customer
+    private function get_or_create_customer(array $ps_customer, array $ps_billing_address): Customer
     {
-        $email = $psCustomer['email'] ?? '';
-        $psCustomerId = (int) ($psCustomer['id'] ?? 0);
+        $email = $ps_customer['email'] ?? '';
+        $ps_customer_id = (int) ($ps_customer['id'] ?? 0);
 
         // Check cache first
-        $cacheKey = "customer_{$psCustomerId}";
-        if (isset($this->customerCache[$cacheKey]) && $this->customerCache[$cacheKey] instanceof Customer) {
-            return $this->customerCache[$cacheKey];
+        $cache_key = "customer_{$ps_customer_id}";
+        if (isset($this->customer_cache[$cache_key]) && $this->customer_cache[$cache_key] instanceof Customer) {
+            return $this->customer_cache[$cache_key];
         }
 
         // Try to find existing customer by email
         if ($email) {
             $existing = Customer::find_by_email($email);
             if ($existing) {
-                $this->customerCache[$cacheKey] = $existing;
+                $this->customer_cache[$cache_key] = $existing;
                 return $existing;
             }
         }
 
         // Determine if Organization (has VAT number) or Person
-        $vatId = $psBillingAddress['vat_number'] ?? '';
-        $hasVat = !empty($vatId);
+        $vat_id = $ps_billing_address['vat_number'] ?? '';
+        $has_vat = !empty($vat_id);
 
         // Customer base data
-        $customerData = [
+        $customer_data = [
             'email' => $email,
-            'telephone' => $psBillingAddress['phone'] ?? $psBillingAddress['phone_mobile'] ?? null,
-            'customer_number' => "PS-{$psCustomerId}",
-            'customer_since' => $psCustomer['date_add'] ?? date('Y-m-d H:i:s'),
-            'customer_type' => ($psCustomer['is_guest'] ?? '0') === '1' ? 'guest' : 'registered',
+            'telephone' => $ps_billing_address['phone'] ?? $ps_billing_address['phone_mobile'] ?? null,
+            'customer_number' => "PS-{$ps_customer_id}",
+            'customer_since' => $ps_customer['date_add'] ?? date('Y-m-d H:i:s'),
+            'customer_type' => ($ps_customer['is_guest'] ?? '0') === '1' ? 'guest' : 'registered',
         ];
 
-        if ($hasVat) {
+        if ($has_vat) {
             // Create Organization
-            $orgData = [
-                'legal_name' => $psBillingAddress['company'] ?? null,
-                'trading_name' => $psBillingAddress['company'] ?? null,
-                'vat_id' => $vatId,
-                'contact_name' => $this->formatCustomerName($psCustomer),
+            $org_data = [
+                'legal_name' => $ps_billing_address['company'] ?? null,
+                'trading_name' => $ps_billing_address['company'] ?? null,
+                'vat_id' => $vat_id,
+                'contact_name' => $this->format_customer_name($ps_customer),
                 'contact_email' => $email,
-                'contact_phone' => $psBillingAddress['phone'] ?? null,
+                'contact_phone' => $ps_billing_address['phone'] ?? null,
             ];
 
-            $customer = Customer::create_organization($customerData, $orgData);
-            $this->log("    Created Organization customer: " . ($psBillingAddress['company'] ?? 'Unknown'));
+            $customer = Customer::create_organization($customer_data, $org_data);
+            $this->log("    Created Organization customer: " . ($ps_billing_address['company'] ?? 'Unknown'));
         } else {
             // Create Person
-            $personData = [
-                'given_name' => $psCustomer['firstname'] ?? null,
-                'family_name' => $psCustomer['lastname'] ?? null,
-                'gender' => $this->mapGender($psCustomer['id_gender'] ?? 0),
-                'birth_date' => $psCustomer['birthday'] ?? null,
+            $person_data = [
+                'given_name' => $ps_customer['firstname'] ?? null,
+                'family_name' => $ps_customer['lastname'] ?? null,
+                'gender' => $this->map_gender($ps_customer['id_gender'] ?? 0),
+                'birth_date' => $ps_customer['birthday'] ?? null,
             ];
 
-            $customer = Customer::create_person($customerData, $personData);
-            $this->log("    Created Person customer: " . $this->formatCustomerName($psCustomer));
+            $customer = Customer::create_person($customer_data, $person_data);
+            $this->log("    Created Person customer: " . $this->format_customer_name($ps_customer));
         }
 
-        $this->customerCache[$cacheKey] = $customer;
+        $this->customer_cache[$cache_key] = $customer;
         return $customer;
     }
 
@@ -337,22 +342,22 @@ class ImportOrders
      * @param bool $isShipping Whether this is a shipping address
      * @return PostalAddress
      */
-    private function createPostalAddress(array $psAddress, Customer $customer, bool $isBilling, bool $isShipping): PostalAddress
+    private function create_postal_address(array $ps_address, Customer $customer, bool $is_billing, bool $is_shipping): PostalAddress
     {
-        $addressData = [
-            'address_name' => $psAddress['alias'] ?? ($isBilling ? 'Billing' : 'Shipping'),
-            'street_address' => trim(($psAddress['address1'] ?? '') . "\n" . ($psAddress['address2'] ?? '')),
-            'address_locality' => $psAddress['city'] ?? null,
+        $address_data = [
+            'address_name' => $ps_address['alias'] ?? ($is_billing ? 'Billing' : 'Shipping'),
+            'street_address' => trim(($ps_address['address1'] ?? '') . "\n" . ($ps_address['address2'] ?? '')),
+            'address_locality' => $ps_address['city'] ?? null,
             'address_region' => null, // PrestaShop uses id_state, would need lookup
-            'postal_code' => $psAddress['postcode'] ?? null,
-            'address_country' => $psAddress['country'] ?? null,
-            'contact_name' => trim(($psAddress['firstname'] ?? '') . ' ' . ($psAddress['lastname'] ?? '')),
-            'telephone' => $psAddress['phone'] ?? $psAddress['phone_mobile'] ?? null,
-            'is_billing' => $isBilling,
-            'is_shipping' => $isShipping,
+            'postal_code' => $ps_address['postcode'] ?? null,
+            'address_country' => $ps_address['country'] ?? null,
+            'contact_name' => trim(($ps_address['firstname'] ?? '') . ' ' . ($ps_address['lastname'] ?? '')),
+            'telephone' => $ps_address['phone'] ?? $ps_address['phone_mobile'] ?? null,
+            'is_billing' => $is_billing,
+            'is_shipping' => $is_shipping,
         ];
 
-        return PostalAddress::make_address($addressData, $customer);
+        return PostalAddress::make_address($address_data, $customer);
     }
 
     /**
@@ -361,9 +366,9 @@ class ImportOrders
      * @param int $genderId PrestaShop gender ID (1=Male, 2=Female)
      * @return string|null
      */
-    private function mapGender(int $genderId): ?string
+    private function map_gender(int $gender_id): ?string
     {
-        return match ($genderId) {
+        return match ($gender_id) {
             1 => 'Male',
             2 => 'Female',
             default => null,
@@ -377,64 +382,64 @@ class ImportOrders
      * @param array $item PrestaShop order row data
      * @return Thing|null The created order item
      */
-    private function importOrderItem(Thing $order, array $item): ?Thing
+    private function import_order_item(Thing $order, array $item): ?Thing
     {
-        $productId = (int) $item['product_id'];
-        $combinationId = (int) ($item['product_attribute_id'] ?? 0);
-        $productName = $item['product_name'] ?? 'Unknown Product';
+        $product_id = (int) $item['product_id'];
+        $combination_id = (int) ($item['product_attribute_id'] ?? 0);
+        $product_name = $item['product_name'] ?? 'Unknown Product';
         $quantity = (int) ($item['product_quantity'] ?? 1);
-        $unitPrice = (float) ($item['unit_price_tax_incl'] ?? $item['product_price'] ?? 0);
+        $unit_price = (float) ($item['unit_price_tax_incl'] ?? $item['product_price'] ?? 0);
 
         // Get or create the product (handles variants automatically)
-        $product = $this->getOrCreateProductWithVariant($productId, $combinationId, $productName, $item);
+        $product = $this->get_or_create_product_with_variant($product_id, $combination_id, $product_name, $item);
 
         if (!$product) {
-            $this->error("    Could not create product for item: {$productName}");
+            $this->error("    Could not create product for item: {$product_name}");
             return null;
         }
 
         // Get product type info
-        $typeInfo = $this->client->getProductTypeInfo($productId);
-        $isPack = $typeInfo['is_pack'];
-        $isVirtual = $typeInfo['is_virtual'];
+        $type_info = $this->client->get_product_type_info($product_id);
+        $is_pack = $type_info['is_pack'];
+        $is_virtual = $type_info['is_virtual'];
 
         // Build description based on product type
         $description = null;
-        if ($isPack) {
+        if ($is_pack) {
             $description = 'Product Bundle';
-        } elseif ($typeInfo['is_downloadable']) {
+        } elseif ($type_info['is_downloadable']) {
             $description = 'Downloadable Product';
-        } elseif ($isVirtual) {
+        } elseif ($is_virtual) {
             $description = 'Virtual Product/Service';
         }
 
         // Create order item
-        $orderItem = Thing::create_order_item($order, $product, $quantity, [
-            'name' => $productName,
+        $order_item = Thing::create_order_item($order, $product, $quantity, [
+            'name' => $product_name,
             'description' => $description,
         ], [
             'order_item_number' => "ITEM-{$item['id']}",
-            'unit_price' => $unitPrice,
-            'line_total' => $unitPrice * $quantity,
+            'unit_price' => $unit_price,
+            'line_total' => $unit_price * $quantity,
             'order_item_status' => $order->delegate()->status(),
             'is_bundle_component' => false, // This is a top-level item, not a component
         ]);
 
-        $this->itemsCreated++;
+        $this->items_created++;
 
         // If it's a pack, also import the pack items as sub-items with parent reference
-        if ($isPack) {
-            $this->importPackItems($order, $orderItem, $productId, $quantity);
+        if ($is_pack) {
+            $this->import_pack_items($order, $order_item, $product_id, $quantity);
         }
 
         // Log product type
-        $typeLabel = $typeInfo['type'];
-        if ($combinationId > 0) {
-            $typeLabel = 'variant';
+        $type_label = $type_info['type'];
+        if ($combination_id > 0) {
+            $type_label = 'variant';
         }
-        $this->log("    Item: {$productName} (type: {$typeLabel})");
+        $this->log("    Item: {$product_name} (type: {$type_label})");
 
-        return $orderItem;
+        return $order_item;
     }
 
     /**
@@ -445,39 +450,39 @@ class ImportOrders
      * @param int $psProductId PrestaShop product ID
      * @param int $packQuantity Quantity of packs ordered
      */
-    private function importPackItems(Thing $order, Thing $parentOrderItem, int $psProductId, int $packQuantity): void
+    private function import_pack_items(Thing $order, Thing $parent_order_item, int $ps_product_id, int $pack_quantity): void
     {
-        $packItems = $this->client->getPackItems($psProductId);
+        $pack_items = $this->client->get_pack_items($ps_product_id);
 
-        if (empty($packItems)) {
+        if (empty($pack_items)) {
             return;
         }
 
-        $this->log("      Importing " . count($packItems) . " bundle items...");
+        $this->log("      Importing " . count($pack_items) . " bundle items...");
 
-        foreach ($packItems as $packItem) {
-            $itemProductId = (int) ($packItem['id'] ?? $packItem['id_product'] ?? 0);
-            $itemQuantity = (int) ($packItem['quantity'] ?? 1);
-            $itemCombinationId = (int) ($packItem['id_product_attribute'] ?? 0);
+        foreach ($pack_items as $pack_item) {
+            $item_product_id = (int) ($pack_item['id'] ?? $pack_item['id_product'] ?? 0);
+            $item_quantity = (int) ($pack_item['quantity'] ?? 1);
+            $item_combination_id = (int) ($pack_item['id_product_attribute'] ?? 0);
 
-            if ($itemProductId === 0) {
+            if ($item_product_id === 0) {
                 continue;
             }
 
             // Get product info
-            $psProduct = $this->client->getProduct($itemProductId);
-            if (!$psProduct) {
+            $ps_product = $this->client->get_product($item_product_id);
+            if (!$ps_product) {
                 continue;
             }
 
-            $productName = $this->getProductName($psProduct);
+            $product_name = $this->get_product_name($ps_product);
 
             // Handle bundle items that may have combinations (variants)
             $product = null;
-            if ($itemCombinationId > 0) {
-                $product = $this->getOrCreateProductWithVariant($itemProductId, $itemCombinationId, $productName, []);
+            if ($item_combination_id > 0) {
+                $product = $this->get_or_create_product_with_variant($item_product_id, $item_combination_id, $product_name, []);
             } else {
-                $product = $this->getOrCreateProduct($itemProductId, $productName, []);
+                $product = $this->get_or_create_product($item_product_id, $product_name, []);
             }
 
             if (!$product) {
@@ -485,23 +490,23 @@ class ImportOrders
             }
 
             // Get parent order item name for reference
-            $bundleName = $parentOrderItem['name'] ?? 'Bundle';
+            $bundle_name = $parent_order_item['name'] ?? 'Bundle';
 
             // Create order item for bundle component with parent reference
-            Thing::create_order_item($order, $product, $itemQuantity * $packQuantity, [
-                'name' => "[Bundle: {$bundleName}] {$productName}",
+            Thing::create_order_item($order, $product, $item_quantity * $pack_quantity, [
+                'name' => "[Bundle: {$bundle_name}] {$product_name}",
                 'description' => "Part of bundle product",
             ], [
-                'order_item_number' => "BUNDLE-{$psProductId}-{$itemProductId}",
+                'order_item_number' => "BUNDLE-{$ps_product_id}-{$item_product_id}",
                 'unit_price' => 0, // Bundle items have 0 price (price is on the bundle)
                 'line_total' => 0,
                 'order_item_status' => $order->delegate()->status(),
-                'parent_bundle_item_id' => $parentOrderItem['id'], // Link to parent bundle item
+                'parent_bundle_item_id' => $parent_order_item['id'], // Link to parent bundle item
                 'is_bundle_component' => true,
             ]);
 
-            $this->itemsCreated++;
-            $this->log("        - {$productName} x{$itemQuantity}");
+            $this->items_created++;
+            $this->log("        - {$product_name} x{$item_quantity}");
         }
     }
 
@@ -514,57 +519,57 @@ class ImportOrders
      * @param array $itemData Additional item data
      * @return Thing|null
      */
-    private function getOrCreateProductWithVariant(int $psProductId, int $combinationId, string $name, array $itemData): ?Thing
+    private function get_or_create_product_with_variant(int $ps_product_id, int $combination_id, string $name, array $item_data): ?Thing
     {
         // If no combination, it's a simple product
-        if ($combinationId === 0) {
-            return $this->getOrCreateProduct($psProductId, $name, $itemData);
+        if ($combination_id === 0) {
+            return $this->get_or_create_product($ps_product_id, $name, $item_data);
         }
 
         // Cache key for this specific variant
-        $variantCacheKey = "ps_{$psProductId}_comb_{$combinationId}";
-        if (isset($this->productCache[$variantCacheKey])) {
-            return $this->productCache[$variantCacheKey];
+        $variant_cache_key = "ps_{$ps_product_id}_comb_{$combination_id}";
+        if (isset($this->product_cache[$variant_cache_key])) {
+            return $this->product_cache[$variant_cache_key];
         }
 
         // Check if variant exists by SKU
-        $combination = $this->client->getCombination($combinationId);
-        $variantSku = $combination['reference'] ?? $itemData['product_reference'] ?? "PS-{$psProductId}-{$combinationId}";
+        $combination = $this->client->get_combination($combination_id);
+        $variant_sku = $combination['reference'] ?? $item_data['product_reference'] ?? "PS-{$ps_product_id}-{$combination_id}";
 
-        $existingProducts = Thing::find_products();
-        foreach ($existingProducts as $existing) {
+        $existing_products = Thing::find_products();
+        foreach ($existing_products as $existing) {
             $delegate = $existing->delegate();
-            if ($delegate && $delegate['sku'] === $variantSku) {
-                $this->productCache[$variantCacheKey] = $existing;
+            if ($delegate && $delegate['sku'] === $variant_sku) {
+                $this->product_cache[$variant_cache_key] = $existing;
                 return $existing;
             }
         }
 
         // First, ensure the parent ProductGroup exists
-        $parentGroup = $this->getOrCreateProductGroup($psProductId, $name);
-        if (!$parentGroup) {
+        $parent_group = $this->get_or_create_product_group($ps_product_id, $name);
+        if (!$parent_group) {
             // Fall back to simple product if we can't create group
-            return $this->getOrCreateProduct($psProductId, $name, $itemData);
+            return $this->get_or_create_product($ps_product_id, $name, $item_data);
         }
 
         // Get variant attributes (color, size, etc.)
-        $variantAttrs = $this->client->getCombinationAttributes($combination);
+        $variant_attrs = $this->client->get_combination_attributes($combination);
 
         // Get combination-specific data
-        $price = (float) ($itemData['unit_price_tax_incl'] ?? $combination['price'] ?? 0);
+        $price = (float) ($item_data['unit_price_tax_incl'] ?? $combination['price'] ?? 0);
         $quantity = (int) ($combination['quantity'] ?? 0);
 
         // If combination price is 0, use parent product price + impact
         if ($price <= 0) {
-            $psProduct = $this->client->getProduct($psProductId);
-            $basePrice = (float) ($psProduct['price'] ?? 0);
-            $priceImpact = (float) ($combination['price'] ?? 0);
-            $price = $basePrice + $priceImpact;
+            $ps_product = $this->client->get_product($ps_product_id);
+            $base_price = (float) ($ps_product['price'] ?? 0);
+            $price_impact = (float) ($combination['price'] ?? 0);
+            $price = $base_price + $price_impact;
         }
 
         // Create the variant using the new create_variant method
-        $variant = Thing::create_variant($parentGroup, $variantAttrs, [
-            'sku' => $variantSku,
+        $variant = Thing::create_variant($parent_group, $variant_attrs, [
+            'sku' => $variant_sku,
             'gtin' => $combination['ean13'] ?? null,
             'price' => $price,
             'currency' => $this->config['default_currency'] ?? 'EUR',
@@ -572,11 +577,11 @@ class ImportOrders
             'inventory_level' => $quantity,
         ]);
 
-        $this->productCache[$variantCacheKey] = $variant;
-        $this->productsCreated++;
+        $this->product_cache[$variant_cache_key] = $variant;
+        $this->products_created++;
 
-        $variantDesc = $variant->delegate()->variant_description();
-        $this->log("    Created variant: {$parentGroup['name']} - {$variantDesc} (SKU: {$variantSku})");
+        $variant_desc = $variant->delegate()->variant_description();
+        $this->log("    Created variant: {$parent_group['name']} - {$variant_desc} (SKU: {$variant_sku})");
 
         return $variant;
     }
@@ -588,58 +593,58 @@ class ImportOrders
      * @param string $name Product name
      * @return Thing|null
      */
-    private function getOrCreateProductGroup(int $psProductId, string $name): ?Thing
+    private function get_or_create_product_group(int $ps_product_id, string $name): ?Thing
     {
-        $cacheKey = "ps_{$psProductId}_group";
-        if (isset($this->productCache[$cacheKey])) {
-            return $this->productCache[$cacheKey];
+        $cache_key = "ps_{$ps_product_id}_group";
+        if (isset($this->product_cache[$cache_key])) {
+            return $this->product_cache[$cache_key];
         }
 
         // Check if ProductGroup already exists
-        $existingProducts = Thing::find_products();
-        foreach ($existingProducts as $existing) {
+        $existing_products = Thing::find_products();
+        foreach ($existing_products as $existing) {
             $delegate = $existing->delegate();
-            if ($delegate && $delegate['is_group'] && str_contains($delegate['sku'] ?? '', "PS-{$psProductId}")) {
+            if ($delegate && $delegate['is_group'] && str_contains($delegate['sku'] ?? '', "PS-{$ps_product_id}")) {
                 // Make sure it's the group, not a variant
                 if (!$delegate->is_variant()) {
-                    $this->productCache[$cacheKey] = $existing;
+                    $this->product_cache[$cache_key] = $existing;
                     return $existing;
                 }
             }
         }
 
         // Fetch product details from PrestaShop
-        $psProduct = $this->client->getProduct($psProductId);
-        if (!$psProduct) {
+        $ps_product = $this->client->get_product($ps_product_id);
+        if (!$ps_product) {
             return null;
         }
 
         // Parse the product name (remove variant info if present)
-        $groupName = $this->parseBaseProductName($name);
+        $group_name = $this->parse_base_product_name($name);
 
         // Determine what this product varies by
-        $variesBy = $this->determineVariesBy($psProductId);
+        $varies_by = $this->determine_varies_by($ps_product_id);
 
         // Create the ProductGroup
-        $productGroup = Thing::create_product_group([
-            'name' => $groupName,
-            'description' => $this->getProductDescription($psProduct),
-            'url' => $this->config['prestashop_url'] . '/index.php?id_product=' . $psProductId . '&controller=product',
+        $product_group = Thing::create_product_group([
+            'name' => $group_name,
+            'description' => $this->get_product_description($ps_product),
+            'url' => $this->config['prestashop_url'] . '/index.php?id_product=' . $ps_product_id . '&controller=product',
         ], [
-            'sku' => "PS-{$psProductId}",
-            'gtin' => $psProduct['ean13'] ?? null,
-            'brand' => $psProduct['manufacturer_name'] ?? null,
-            'price' => (float) ($psProduct['price'] ?? 0),
+            'sku' => "PS-{$ps_product_id}",
+            'gtin' => $ps_product['ean13'] ?? null,
+            'brand' => $ps_product['manufacturer_name'] ?? null,
+            'price' => (float) ($ps_product['price'] ?? 0),
             'currency' => $this->config['default_currency'] ?? 'EUR',
-            'varies_by' => $variesBy,
+            'varies_by' => $varies_by,
         ]);
 
-        $this->productCache[$cacheKey] = $productGroup;
-        $this->productsCreated++;
+        $this->product_cache[$cache_key] = $product_group;
+        $this->products_created++;
 
-        $this->log("    Created ProductGroup: {$groupName} (varies by: {$variesBy}) [VARIANTS]");
+        $this->log("    Created ProductGroup: {$group_name} (varies by: {$varies_by}) [VARIANTS]");
 
-        return $productGroup;
+        return $product_group;
     }
 
     /**
@@ -648,30 +653,30 @@ class ImportOrders
      * @param int $psProductId
      * @return string Comma-separated list of variation types
      */
-    private function determineVariesBy(int $psProductId): string
+    private function determine_varies_by(int $ps_product_id): string
     {
-        $combinations = $this->client->getProductCombinations($psProductId);
+        $combinations = $this->client->get_product_combinations($ps_product_id);
 
         if (empty($combinations)) {
             return '';
         }
 
         // Get attributes from first combination to determine types
-        $attrTypes = [];
+        $attr_types = [];
         foreach ($combinations as $combination) {
-            $attrs = $this->client->getCombinationAttributes($combination);
-            foreach (array_keys($attrs) as $attrType) {
-                if (!in_array($attrType, $attrTypes, true)) {
-                    $attrTypes[] = $attrType;
+            $attrs = $this->client->get_combination_attributes($combination);
+            foreach (array_keys($attrs) as $attr_type) {
+                if (!in_array($attr_type, $attr_types, true)) {
+                    $attr_types[] = $attr_type;
                 }
             }
             // Usually all combinations have same attribute types, so check first few
-            if (count($attrTypes) > 0 && count($combinations) > 3) {
+            if (count($attr_types) > 0 && count($combinations) > 3) {
                 break;
             }
         }
 
-        return implode(', ', $attrTypes);
+        return implode(', ', $attr_types);
     }
 
     /**
@@ -680,7 +685,7 @@ class ImportOrders
      * @param string $name
      * @return string
      */
-    private function parseBaseProductName(string $name): string
+    private function parse_base_product_name(string $name): string
     {
         // PrestaShop often appends variant info after " - "
         $parts = explode(' - ', $name);
@@ -700,96 +705,96 @@ class ImportOrders
      * @param array $itemData Additional item data
      * @return Thing|null
      */
-    private function getOrCreateProduct(int $psProductId, string $name, array $itemData): ?Thing
+    private function get_or_create_product(int $ps_product_id, string $name, array $item_data): ?Thing
     {
         // Check cache first
-        $cacheKey = "ps_{$psProductId}";
-        if (isset($this->productCache[$cacheKey])) {
-            return $this->productCache[$cacheKey];
+        $cache_key = "ps_{$ps_product_id}";
+        if (isset($this->product_cache[$cache_key])) {
+            return $this->product_cache[$cache_key];
         }
 
         // Check if product exists in database
-        $existingProducts = Thing::find_products();
-        foreach ($existingProducts as $existing) {
+        $existing_products = Thing::find_products();
+        foreach ($existing_products as $existing) {
             $delegate = $existing->delegate();
             // Match by SKU that contains PrestaShop ID
-            if ($delegate && str_contains($delegate['sku'] ?? '', "PS-{$psProductId}")) {
-                $this->productCache[$cacheKey] = $existing;
+            if ($delegate && str_contains($delegate['sku'] ?? '', "PS-{$ps_product_id}")) {
+                $this->product_cache[$cache_key] = $existing;
                 return $existing;
             }
         }
 
         // Fetch product details from PrestaShop
-        $psProduct = $this->client->getProduct($psProductId);
+        $ps_product = $this->client->get_product($ps_product_id);
 
-        $sku = $itemData['product_reference'] ?? $psProduct['reference'] ?? "PS-{$psProductId}";
-        $price = (float) ($itemData['unit_price_tax_incl'] ?? $psProduct['price'] ?? 0);
+        $sku = $item_data['product_reference'] ?? $ps_product['reference'] ?? "PS-{$ps_product_id}";
+        $price = (float) ($item_data['unit_price_tax_incl'] ?? $ps_product['price'] ?? 0);
 
         // Get detailed product type info
-        $typeInfo = $this->client->getProductTypeInfo($psProductId);
+        $type_info = $this->client->get_product_type_info($ps_product_id);
 
         // Determine if it's a bundle
-        $isPack = $typeInfo['is_pack'];
+        $is_pack = $type_info['is_pack'];
 
         // Build product data
-        $productData = [
+        $product_data = [
             'sku' => $sku,
-            'gtin' => $psProduct['ean13'] ?? null,
-            'brand' => $psProduct['manufacturer_name'] ?? null,
+            'gtin' => $ps_product['ean13'] ?? null,
+            'brand' => $ps_product['manufacturer_name'] ?? null,
             'price' => $price,
             'currency' => $this->config['default_currency'] ?? 'EUR',
-            'availability' => ((int)($psProduct['quantity'] ?? 0)) > 0 ? 'InStock' : 'OutOfStock',
-            'inventory_level' => (int) ($psProduct['quantity'] ?? 0),
-            'is_group' => $isPack, // Mark bundles as ProductGroup
-            'is_bundle' => $isPack, // Also mark as bundle for export
+            'availability' => ((int)($ps_product['quantity'] ?? 0)) > 0 ? 'InStock' : 'OutOfStock',
+            'inventory_level' => (int) ($ps_product['quantity'] ?? 0),
+            'is_group' => $is_pack, // Mark bundles as ProductGroup
+            'is_bundle' => $is_pack, // Also mark as bundle for export
 
             // Virtual product fields
-            'is_virtual' => $typeInfo['is_virtual'],
-            'is_downloadable' => $typeInfo['is_downloadable'],
-            'is_service' => $typeInfo['is_virtual'] && !$typeInfo['is_downloadable'],
+            'is_virtual' => $type_info['is_virtual'],
+            'is_downloadable' => $type_info['is_downloadable'],
+            'is_service' => $type_info['is_virtual'] && !$type_info['is_downloadable'],
         ];
 
         // Add download info for downloadable products
-        if ($typeInfo['is_downloadable'] && $typeInfo['download_info']) {
-            $downloadInfo = $typeInfo['download_info'];
-            $productData['download_limit'] = $downloadInfo['nb_downloadable'] ?? null;
-            $productData['download_expiry_days'] = $downloadInfo['nb_days_accessible'] ?? null;
+        if ($type_info['is_downloadable'] && $type_info['download_info']) {
+            $download_info = $type_info['download_info'];
+            $product_data['download_limit'] = $download_info['nb_downloadable'] ?? null;
+            $product_data['download_expiry_days'] = $download_info['nb_days_accessible'] ?? null;
             // Note: download_url is typically generated per-order, not stored on product
         }
 
         // Add bundle items for pack products
-        if ($isPack) {
-            $packItems = $this->client->getPackItems($psProductId);
-            $bundleItems = [];
-            foreach ($packItems as $packItem) {
-                $bundleItems[] = [
-                    'product_id' => (int) ($packItem['id'] ?? $packItem['id_product'] ?? 0),
-                    'quantity' => (int) ($packItem['quantity'] ?? 1),
-                    'prestashop_id' => (int) ($packItem['id'] ?? $packItem['id_product'] ?? 0),
+        if ($is_pack) {
+            $pack_items = $this->client->get_pack_items($ps_product_id);
+            $bundle_items = [];
+            foreach ($pack_items as $pack_item) {
+                $bundle_items[] = [
+                    'product_id' => (int) ($pack_item['id'] ?? $pack_item['id_product'] ?? 0),
+                    'quantity' => (int) ($pack_item['quantity'] ?? 1),
+                    'prestashop_id' => (int) ($pack_item['id'] ?? $pack_item['id_product'] ?? 0),
                 ];
             }
-            if (!empty($bundleItems)) {
-                $productData['bundle_items'] = json_encode($bundleItems, JSON_UNESCAPED_UNICODE);
+            if (!empty($bundle_items)) {
+                $product_data['bundle_items'] = json_encode($bundle_items, JSON_UNESCAPED_UNICODE);
             }
         }
 
         // Create the product
         $product = Thing::create_product([
             'name' => $name,
-            'description' => $this->getProductDescription($psProduct),
-            'url' => $this->config['prestashop_url'] . '/index.php?id_product=' . $psProductId . '&controller=product',
-        ], $productData);
+            'description' => $this->get_product_description($ps_product),
+            'url' => $this->config['prestashop_url'] . '/index.php?id_product=' . $ps_product_id . '&controller=product',
+        ], $product_data);
 
-        $this->productCache[$cacheKey] = $product;
-        $this->productsCreated++;
+        $this->product_cache[$cache_key] = $product;
+        $this->products_created++;
 
         // Log with product type
-        $typeLabel = $typeInfo['type'];
-        if ($isPack) {
-            $bundleCount = count($bundleItems ?? []);
-            $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$typeLabel}] ({$bundleCount} items)");
+        $type_label = $type_info['type'];
+        if ($is_pack) {
+            $bundle_count = count($bundle_items ?? []);
+            $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$type_label}] ({$bundle_count} items)");
         } else {
-            $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$typeLabel}]");
+            $this->log("    Created product: {$name} (SKU: {$sku}) [TYPE: {$type_label}]");
         }
 
         return $product;
@@ -801,13 +806,13 @@ class ImportOrders
      * @param string $orderNumber The order reference/number
      * @return bool
      */
-    private function orderExists(string $orderNumber): bool
+    private function order_exists(string $order_number): bool
     {
         $orders = Thing::find_orders();
 
         foreach ($orders as $order) {
             $delegate = $order->delegate();
-            if ($delegate && $delegate['order_number'] === $orderNumber) {
+            if ($delegate && $delegate['order_number'] === $order_number) {
                 return true;
             }
         }
@@ -818,29 +823,29 @@ class ImportOrders
     /**
      * Get customer data (with caching)
      */
-    private function getCustomer(int $customerId): array
+    private function get_customer(int $customer_id): array
     {
-        if (!isset($this->customerCache[$customerId])) {
-            $this->customerCache[$customerId] = $this->client->getCustomer($customerId) ?? [];
+        if (!isset($this->customer_cache[$customer_id])) {
+            $this->customer_cache[$customer_id] = $this->client->get_customer($customer_id) ?? [];
         }
-        return $this->customerCache[$customerId];
+        return $this->customer_cache[$customer_id];
     }
 
     /**
      * Get address data (with caching)
      */
-    private function getAddress(int $addressId): array
+    private function get_address(int $address_id): array
     {
-        if (!isset($this->addressCache[$addressId])) {
-            $this->addressCache[$addressId] = $this->client->getAddress($addressId) ?? [];
+        if (!isset($this->address_cache[$address_id])) {
+            $this->address_cache[$address_id] = $this->client->get_address($address_id) ?? [];
         }
-        return $this->addressCache[$addressId];
+        return $this->address_cache[$address_id];
     }
 
     /**
      * Format customer name from customer data
      */
-    private function formatCustomerName(array $customer): string
+    private function format_customer_name(array $customer): string
     {
         $parts = array_filter([
             $customer['firstname'] ?? '',
@@ -853,7 +858,7 @@ class ImportOrders
     /**
      * Format address as a string
      */
-    private function formatAddress(array $address): string
+    private function format_address(array $address): string
     {
         if (empty($address)) {
             return '';
@@ -873,19 +878,19 @@ class ImportOrders
     /**
      * Get product name from PrestaShop product data
      */
-    private function getProductName(array $psProduct): string
+    private function get_product_name(array $ps_product): string
     {
         // Product name can be in different places depending on API response
-        if (isset($psProduct['name'])) {
-            if (is_array($psProduct['name'])) {
+        if (isset($ps_product['name'])) {
+            if (is_array($ps_product['name'])) {
                 // Multi-language: get first available
-                foreach ($psProduct['name'] as $lang) {
+                foreach ($ps_product['name'] as $lang) {
                     if (isset($lang['value']) && !empty($lang['value'])) {
                         return $lang['value'];
                     }
                 }
             }
-            return (string) $psProduct['name'];
+            return (string) $ps_product['name'];
         }
 
         return 'Unknown Product';
@@ -894,13 +899,13 @@ class ImportOrders
     /**
      * Get product description from PrestaShop product data
      */
-    private function getProductDescription(array $psProduct): ?string
+    private function get_product_description(array $ps_product): ?string
     {
-        if (!$psProduct) {
+        if (!$ps_product) {
             return null;
         }
 
-        $desc = $psProduct['description_short'] ?? $psProduct['description'] ?? null;
+        $desc = $ps_product['description_short'] ?? $ps_product['description'] ?? null;
 
         if (is_array($desc)) {
             foreach ($desc as $lang) {
@@ -917,19 +922,19 @@ class ImportOrders
     /**
      * Map PrestaShop order state to Schema.org OrderStatus
      */
-    private function mapOrderStatus(int $stateId): string
+    private function map_order_status(int $state_id): string
     {
         $map = $this->config['order_status_map'] ?? [];
-        return $map[$stateId] ?? 'OrderProcessing';
+        return $map[$state_id] ?? 'OrderProcessing';
     }
 
     /**
      * Map payment status from PrestaShop order
      */
-    private function mapPaymentStatus(array $psOrder): string
+    private function map_payment_status(array $ps_order): string
     {
-        $paid = (float) ($psOrder['total_paid_real'] ?? 0);
-        $total = (float) ($psOrder['total_paid'] ?? 0);
+        $paid = (float) ($ps_order['total_paid_real'] ?? 0);
+        $total = (float) ($ps_order['total_paid'] ?? 0);
 
         if ($paid >= $total && $total > 0) {
             return 'Paid';
@@ -967,13 +972,13 @@ class ImportOrders
     /**
      * Get import statistics
      */
-    public function getStats(): array
+    public function get_stats(): array
     {
         return [
-            'orders_imported' => $this->ordersImported,
-            'orders_skipped' => $this->ordersSkipped,
-            'products_created' => $this->productsCreated,
-            'items_created' => $this->itemsCreated,
+            'orders_imported' => $this->orders_imported,
+            'orders_skipped' => $this->orders_skipped,
+            'products_created' => $this->products_created,
+            'items_created' => $this->items_created,
             'errors' => $this->errors,
         ];
     }
@@ -1012,26 +1017,26 @@ HELP;
     }
 
     // Load configuration
-    $configFile = __DIR__ . '/config.php';
-    if (!file_exists($configFile)) {
+    $config_file = __DIR__ . '/config.php';
+    if (!file_exists($config_file)) {
         echo "Error: Configuration file not found.\n";
         echo "Please copy config.example.php to config.php and fill in your settings.\n";
         exit(1);
     }
 
-    $config = require $configFile;
+    $config = require $config_file;
 
     // Apply CLI overrides
     if (isset($options['debug'])) {
         $config['debug'] = true;
     }
 
-    $minId = isset($options['min-id']) ? (int) $options['min-id'] : null;
+    $min_id = isset($options['min-id']) ? (int) $options['min-id'] : null;
     $limit = isset($options['limit']) ? (int) $options['limit'] : null;
 
     // Run the import
     $importer = new ImportOrders($config);
-    $stats = $importer->run($minId, $limit);
+    $stats = $importer->run($min_id, $limit);
 
     // Exit with error code if there were errors
     exit(count($stats['errors']) > 0 ? 1 : 0);

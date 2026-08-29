@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 /**
  * Schema.org CreativeWork with Polymorphic Authors Example
@@ -13,7 +18,25 @@
  * - Getting authors as typed ActiveRow instances
  */
 
-require_once __DIR__ . '/../../vendor/autoload.php';
+// The autoloader, wherever this package happens to sit. One hardcoded depth
+// works in exactly the arrangement it was written in; a list of candidates
+// works when somebody vendors the package, installs it, or checks it out.
+(static function (): void {
+    foreach ([
+        __DIR__ . '/../../vendor/autoload.php',
+        __DIR__ . '/../../../vendor/autoload.php',
+        __DIR__ . '/../../../../../../vendor/autoload.php',
+        __DIR__ . '/../../../../../../../vendor/autoload.php',
+    ] as $autoload) {
+        if (is_file($autoload)) {
+            require_once $autoload;
+
+            return;
+        }
+    }
+
+    require_once __DIR__ . '/../../src/autoload.php';
+})();
 
 use Italix\Orm\ActiveRow\ActiveRow;
 use Italix\Orm\ActiveRow\Traits\Persistable;
@@ -239,9 +262,9 @@ class CreativeWorkRow extends ActiveRow
         $authors = $this->authors();
         $year = date('Y', strtotime($this['date_published'] ?? 'now'));
 
-        $authorParts = array_map(fn($a) => $a->citation_name(), $authors);
+        $author_parts = array_map(fn($a) => $a->citation_name(), $authors);
 
-        return implode(', ', $authorParts) . ' (' . $year . '). ' . $this['title'] . '.';
+        return implode(', ', $author_parts) . ' (' . $year . '). ' . $this['title'] . '.';
     }
 
     /**
@@ -281,7 +304,7 @@ class AuthorFactory
     {
         return array_map(function ($work) {
             // Wrap the work
-            $workRow = CreativeWorkRow::wrap($work);
+            $work_row = CreativeWorkRow::wrap($work);
 
             // Process authorships if present
             if (isset($work['authorships'])) {
@@ -295,10 +318,10 @@ class AuthorFactory
                     }
                     $authorships[] = $authorship;
                 }
-                $workRow['authorships'] = $authorships;
+                $work_row['authorships'] = $authorships;
             }
 
-            return $workRow;
+            return $work_row;
         }, $works);
     }
 }
@@ -459,20 +482,20 @@ echo "Loading works with authors...\n\n";
 // In a real scenario, you'd use the relations system
 // Here we manually join the data to demonstrate the wrapping
 
-$rawWorks = $dm->select()->from($creative_works)->execute();
+$raw_works = $dm->select()->from($creative_works)->execute();
 
 // For each work, load its authorships with author data
-$worksWithAuthors = [];
-foreach ($rawWorks as $work) {
+$works_with_authors = [];
+foreach ($raw_works as $work) {
     $work['authorships'] = [];
 
     // Get authorships for this work
-    $workAuthorships = $dm->sql(
+    $work_authorships = $dm->sql(
         'SELECT * FROM authorships WHERE work_id = ? ORDER BY position',
         [$work['id']]
     )->all();
 
-    foreach ($workAuthorships as $authorship) {
+    foreach ($work_authorships as $authorship) {
         // Load the author based on type
         if ($authorship['author_type'] === 'person') {
             $author = $dm->sql(
@@ -490,11 +513,11 @@ foreach ($rawWorks as $work) {
         $work['authorships'][] = $authorship;
     }
 
-    $worksWithAuthors[] = $work;
+    $works_with_authors[] = $work;
 }
 
 // Wrap with AuthorFactory
-$works = AuthorFactory::wrap_works_with_authors($worksWithAuthors);
+$works = AuthorFactory::wrap_works_with_authors($works_with_authors);
 
 // ============================================
 // Display works with their authors
@@ -549,16 +572,16 @@ foreach ($works as $work) {
 
 echo "=== CanBeAuthor Trait Methods ===\n\n";
 
-$firstWork = $works[0];
-$primaryAuthor = $firstWork->primary_author();
+$first_work = $works[0];
+$primary_author = $first_work->primary_author();
 
-echo "Primary author of '{$firstWork['title']}':\n";
-echo "  display_name(): " . $primaryAuthor->display_name() . "\n";
-echo "  author_type(): " . $primaryAuthor->author_type() . "\n";
-echo "  citation_name(): " . $primaryAuthor->citation_name() . "\n";
-echo "  initials(): " . $primaryAuthor->initials() . "\n";
-echo "  is_person(): " . ($primaryAuthor->is_person() ? 'Yes' : 'No') . "\n";
-echo "  is_organization(): " . ($primaryAuthor->is_organization() ? 'Yes' : 'No') . "\n";
-echo "  author_meta(): " . json_encode($primaryAuthor->author_meta()) . "\n";
+echo "Primary author of '{$first_work['title']}':\n";
+echo "  display_name(): " . $primary_author->display_name() . "\n";
+echo "  author_type(): " . $primary_author->author_type() . "\n";
+echo "  citation_name(): " . $primary_author->citation_name() . "\n";
+echo "  initials(): " . $primary_author->initials() . "\n";
+echo "  is_person(): " . ($primary_author->is_person() ? 'Yes' : 'No') . "\n";
+echo "  is_organization(): " . ($primary_author->is_organization() ? 'Yes' : 'No') . "\n";
+echo "  author_meta(): " . json_encode($primary_author->author_meta()) . "\n";
 
 echo "\n=== Example Complete ===\n";

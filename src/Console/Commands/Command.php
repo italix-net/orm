@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Base Command
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -137,7 +142,7 @@ abstract class Command
         
         $this->dm = match ($dialect) {
             'mysql' => \Italix\Orm\mysql($db_config),
-            'postgresql', 'postgres', 'pgsql' => \Italix\Orm\postgresql($db_config),
+            'postgresql', 'postgres', 'pgsql' => \Italix\Orm\postgres($db_config),
             'sqlite' => \Italix\Orm\sqlite($db_config),
             'supabase' => \Italix\Orm\supabase($db_config),
             default => throw new \RuntimeException("Unknown dialect: {$dialect}"),
@@ -164,7 +169,7 @@ abstract class Command
         
         return match ($scheme) {
             'mysql' => \Italix\Orm\mysql($config),
-            'postgresql', 'postgres', 'pgsql' => \Italix\Orm\postgresql($config),
+            'postgresql', 'postgres', 'pgsql' => \Italix\Orm\postgres($config),
             'sqlite' => \Italix\Orm\sqlite(['database' => $config['database']]),
             default => throw new \RuntimeException("Unknown scheme: {$scheme}"),
         };

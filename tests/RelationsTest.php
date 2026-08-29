@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Relations System Test
  *
@@ -12,7 +17,26 @@
  * - Relation aliases
  */
 
-require_once __DIR__ . '/../src/autoload.php';
+// The autoloader, wherever this package happens to sit. Composer first, because
+// `Italix\Contracts` is a real dependency and Composer is what resolves it; the
+// manual autoloader beside the source is the no-Composer fallback, and it now
+// knows about that namespace too.
+(static function (): void {
+    foreach ([
+        __DIR__ . '/../vendor/autoload.php',               // checked out on its own
+        __DIR__ . '/../../../../../vendor/autoload.php',   // vendored in a project
+        __DIR__ . '/../../../../vendor/autoload.php',      // installed as a package
+        __DIR__ . '/../../../autoload.php',                // sibling autoloader
+    ] as $autoload) {
+        if (is_file($autoload)) {
+            require_once $autoload;
+
+            return;
+        }
+    }
+
+    require_once __DIR__ . '/../src/autoload.php';
+})();
 
 use Italix\Orm\Relations\RelationsRegistry;
 use function Italix\Orm\sqlite_memory;
@@ -20,25 +44,23 @@ use function Italix\Orm\Schema\{sqlite_table, integer, varchar, text, boolean};
 use function Italix\Orm\Relations\{define_relations, get_relations, get_relation};
 use function Italix\Orm\Operators\{eq, desc};
 
-echo "============================================\n";
-echo "  Italix ORM - Relations System Test\n";
-echo "============================================\n\n";
+use function Italix\Testing\{suite, test as ix_test, summary};
 
-$passed = 0;
-$failed = 0;
+suite('Italix Orm - relations');
 
-function test($name, $condition, $details = '') {
-    global $passed, $failed;
-    if ($condition) {
-        echo "✓ PASS: {$name}\n";
-        $passed++;
-    } else {
-        echo "✗ FAIL: {$name}\n";
-        if ($details) {
-            echo "        Details: {$details}\n";
-        }
-        $failed++;
-    }
+
+/**
+ * This suite predates the shared runner and calls `test()` a few hundred times
+ * with the signature it has always had. The shim leaves every one of those call
+ * sites untouched and routes the result to `Italix\Testing\Runner`, so the
+ * assertions are counted by `ix test`, appear in the JUnit report, and stop
+ * being printed into a summary only a person reads.
+ *
+ * `(bool)` because the original tested truthiness while the runner takes a bool.
+ */
+function test($name, $condition, $details = ''): void
+{
+    ix_test((string) $name, (bool) $condition, (string) $details);
 }
 
 // Reset registry for clean testing
@@ -461,7 +483,9 @@ $pg_query = $pg_builder->query($users)->where(eq($users->id, 1));
 $params = [];
 $pg_sql = $method->invoke($pg_query, $params);
 test('PostgreSQL uses double-quote quoting', strpos($pg_sql, '"users"') !== false);
-test('PostgreSQL uses $1 placeholders', strpos($pg_sql, '$1') !== false);
+// `?`, not `$1`: PDO does not parse libpq's numbered form, so a statement
+// carrying it binds nothing and comes back empty without an error.
+test('PostgreSQL uses ? placeholders', strpos($pg_sql, '?') !== false && strpos($pg_sql, '$1') === false);
 
 // SQLite dialect test
 $sqlite_builder = new RelationalQueryBuilder($dm->get_connection(), 'sqlite');
@@ -477,7 +501,7 @@ $supabase_query = $supabase_builder->query($users)->where(eq($users->id, 1));
 $params = [];
 $supabase_sql = $method->invoke($supabase_query, $params);
 test('Supabase uses double-quote quoting', strpos($supabase_sql, '"users"') !== false);
-test('Supabase uses $1 placeholders', strpos($supabase_sql, '$1') !== false);
+test('Supabase uses ? placeholders', strpos($supabase_sql, '?') !== false && strpos($supabase_sql, '$1') === false);
 
 echo "\n";
 
@@ -485,16 +509,4 @@ echo "\n";
 // Summary
 // ============================================
 
-echo "============================================\n";
-echo "  Test Summary\n";
-echo "============================================\n";
-echo "Passed: {$passed}\n";
-echo "Failed: {$failed}\n";
-echo "Total:  " . ($passed + $failed) . "\n";
-echo "============================================\n";
-
-if ($failed > 0) {
-    exit(1);
-}
-
-exit(0);
+exit(summary());

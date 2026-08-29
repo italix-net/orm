@@ -15,6 +15,7 @@ Italix ORM combines the **best ideas from Laravel** (migrations, Blueprint API) 
 | **Eager Loading with `with`** | Drizzle | ✅ Implemented |
 | **Polymorphic Relations** | Laravel + Drizzle | ✅ Implemented |
 | **Multi-Dialect Support** | Both | ✅ MySQL, PostgreSQL, SQLite, Supabase |
+| **Composite Primary Keys** | SQLAlchemy / EF Core | ✅ `Table::primary_key([...])` / `Blueprint::primary([...])`, matched by `find()` and `ActiveRow` alike |
 
 ---
 

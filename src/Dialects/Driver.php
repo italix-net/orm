@@ -1,14 +1,21 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Database Driver
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
 
 namespace Italix\Orm\Dialects;
+
+use Italix\Orm\Profiling\QueryLog;
 
 use PDO;
 use PDOException;
@@ -26,6 +33,9 @@ class Driver
     
     /** @var PDO|null Database connection */
     protected ?PDO $connection = null;
+
+    /** @var QueryLog|null Where statements report what they cost */
+    protected ?QueryLog $query_log = null;
 
     /**
      * Create a new Driver instance
@@ -116,8 +126,28 @@ class Driver
     {
         $conn = $this->get_connection();
         $stmt = $conn->prepare($sql);
+
+        if ($this->query_log === null) {
+            $stmt->execute($params);
+
+            return $stmt;
+        }
+
+        // Around execute() only. Preparing is the driver's business and is
+        // usually cached; what a slow-query log is asked about is the server.
+        $started_t = microtime(true);
         $stmt->execute($params);
+        $this->query_log->record($sql, $params, microtime(true) - $started_t);
+
         return $stmt;
+    }
+
+    /** Where to report what each statement cost, if anywhere. */
+    public function set_query_log(?QueryLog $log): self
+    {
+        $this->query_log = $log;
+
+        return $this;
     }
 
     /**
@@ -153,6 +183,7 @@ class Driver
         return $this->get_connection()->beginTransaction();
     }
 
+
     /**
      * Commit the current transaction
      */
@@ -170,7 +201,12 @@ class Driver
     }
 
     /**
-     * Check if inside a transaction
+     * Check if inside a transaction.
+     *
+     * Not the same question as DataManager's depth counter: the connection can
+     * be inside a transaction that object never opened — a test harness that
+     * wraps every suite in one, an enclosing job, any code sharing the PDO.
+     * DataManager::begin_transaction() asks this before sending BEGIN.
      */
     public function in_transaction(): bool
     {

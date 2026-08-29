@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - PostgreSQL Dialect
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -36,7 +41,10 @@ class PostgresqlDialect extends BaseDialect
      */
     public function get_placeholder(int $index): string
     {
-        return '$' . $index;
+        // Not `$1`: these statements are prepared by PDO, which parses `?` and
+        // named placeholders only. Given `$1` it binds nothing, PostgreSQL sees
+        // an unset parameter, and the query comes back empty without an error.
+        return '?';
     }
 
     /**

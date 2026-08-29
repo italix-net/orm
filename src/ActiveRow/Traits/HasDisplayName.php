@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow\Traits;
 
@@ -65,15 +70,15 @@ trait HasDisplayName
      * @param string $suffix Suffix to add when truncated
      * @return string
      */
-    public function truncated_name(int $maxLength = 30, string $suffix = '...'): string
+    public function truncated_name(int $max_length = 30, string $suffix = '...'): string
     {
         $name = $this->display_name();
 
-        if (mb_strlen($name) <= $maxLength) {
+        if (mb_strlen($name) <= $max_length) {
             return $name;
         }
 
-        return mb_substr($name, 0, $maxLength - mb_strlen($suffix)) . $suffix;
+        return mb_substr($name, 0, $max_length - mb_strlen($suffix)) . $suffix;
     }
 
     /**

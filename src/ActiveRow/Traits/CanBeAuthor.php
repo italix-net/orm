@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow\Traits;
 
@@ -63,14 +68,14 @@ trait CanBeAuthor
 
         // Get just the class name without namespace
         $pos = strrpos($class, '\\');
-        $shortName = $pos !== false ? substr($class, $pos + 1) : $class;
+        $short_name = $pos !== false ? substr($class, $pos + 1) : $class;
 
         // Remove "Row" suffix if present
-        if (substr($shortName, -3) === 'Row') {
-            $shortName = substr($shortName, 0, -3);
+        if (substr($short_name, -3) === 'Row') {
+            $short_name = substr($short_name, 0, -3);
         }
 
-        return strtolower($shortName);
+        return strtolower($short_name);
     }
 
     /**

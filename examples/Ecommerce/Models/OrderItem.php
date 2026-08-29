@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * OrderItem Model (Delegate)
  *
@@ -165,11 +170,11 @@ class OrderItem extends ActiveRow
      */
     public function parent_bundle_item(): ?Thing
     {
-        $parentId = $this['parent_bundle_item_id'];
-        if (!$parentId) {
+        $parent_id = $this['parent_bundle_item_id'];
+        if (!$parent_id) {
             return null;
         }
-        return Thing::find_with_delegate($parentId);
+        return Thing::find_with_delegate($parent_id);
     }
 
     /**
@@ -183,12 +188,12 @@ class OrderItem extends ActiveRow
             return [];
         }
 
-        $thingId = $this['thing_id'];
+        $thing_id = $this['thing_id'];
         $table = self::get_table();
 
         // Find all items with this item as parent
         $components = self::find_all([
-            'where' => eq($table->parent_bundle_item_id, $thingId),
+            'where' => eq($table->parent_bundle_item_id, $thing_id),
         ]);
 
         $things = [];

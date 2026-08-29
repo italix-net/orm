@@ -372,22 +372,27 @@ foreach ($migrator->status() as $migration) {
 
 ```php
 <?php
-class AddFullTextIndex extends Migration
+// This particular case — full-text search — no longer needs $this->dialect()
+// by hand: Blueprint::fulltext(['title', 'content']) now renders correctly
+// on all three dialects itself, SQLite's FTS5 virtual table included — see
+// the "Full-text search" section of the main README. $this->dialect() below
+// is still the right tool for any other genuinely dialect-specific
+// statement this package has no first-class helper for.
+class AddDialectSpecificIndex extends Migration
 {
     public function up(): void
     {
         $this->dialect([
-            'mysql' => 'ALTER TABLE posts ADD FULLTEXT INDEX idx_content (title, content)',
-            'postgresql' => 'CREATE INDEX idx_content ON posts USING gin(to_tsvector(\'english\', title || \' \' || content))',
-            // SQLite doesn't support full-text the same way, might use FTS5
+            'mysql'      => 'ALTER TABLE posts ADD SPATIAL INDEX idx_location (coordinates)',
+            'postgresql' => 'CREATE INDEX idx_location ON posts USING gist(coordinates)',
         ]);
     }
-    
+
     public function down(): void
     {
         $this->dialect([
-            'mysql' => 'ALTER TABLE posts DROP INDEX idx_content',
-            'postgresql' => 'DROP INDEX idx_content',
+            'mysql'      => 'ALTER TABLE posts DROP INDEX idx_location',
+            'postgresql' => 'DROP INDEX idx_location',
         ]);
     }
 }

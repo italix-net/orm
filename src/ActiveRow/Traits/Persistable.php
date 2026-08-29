@@ -1,11 +1,19 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow\Traits;
 
+use Italix\Orm\ActiveRow\ActiveRowRegistry;
+use Italix\Orm\ActiveRow\TypedQuery;
 use Italix\Orm\DataManager;
+use Italix\Orm\Operators\SQLExpression;
 use Italix\Orm\Schema\Table;
 
-use function Italix\Orm\Operators\eq;
+use function Italix\Orm\Operators\{and_, eq};
 
 /**
  * Trait Persistable
@@ -51,6 +59,10 @@ trait Persistable
     {
         self::$dm_registry[static::class] = $dm;
         self::$table_registry[static::class] = $table;
+
+        // The reverse index — see ActiveRowRegistry's own docblock for why a
+        // trait's own static properties cannot serve this by themselves.
+        ActiveRowRegistry::register($table, static::class);
     }
 
     /**
@@ -98,6 +110,31 @@ trait Persistable
     }
 
     /**
+     * `WHERE {pk} = {value}` for the ordinary single-column key — the exact
+     * condition every one of `save()`/`delete()` already built by hand — or
+     * every composite-key column ANDed together, in declared order, for a
+     * `static::$primary_key` array. Built from `get_key()`, so a row without
+     * a full key (mid-construction, or a composite key missing a column)
+     * fails inside `get_key()`'s own `??`-to-`null` rather than compiling a
+     * condition that would silently match nothing or, worse, everything.
+     */
+    protected function primary_key_condition(Table $table): SQLExpression
+    {
+        $key = $this->get_key();
+
+        if (!is_array(static::$primary_key)) {
+            return eq($table->{static::$primary_key}, $key);
+        }
+
+        $conditions = [];
+        foreach ($key as $col => $value) {
+            $conditions[] = eq($table->$col, $value);
+        }
+
+        return and_(...$conditions);
+    }
+
+    /**
      * Save the row to the database
      *
      * Performs INSERT for new records, UPDATE for existing ones.
@@ -120,14 +157,42 @@ trait Persistable
             $dirty = $this->get_dirty();
 
             if (!empty($dirty)) {
-                // Don't update the primary key
-                unset($dirty[$pk]);
+                // Don't update the primary key — every column of it, not
+                // only the first, for a composite one. (Not independently
+                // mutation-provable end to end: primary_key_condition()
+                // below reads the same current $this->data a stripped
+                // column's value would have come from, so an UPDATE that
+                // wrongly re-sent a composite-key column always writes back
+                // the value already there — there is no black-box way to
+                // observe the difference. Correct by inspection and by the
+                // identical single-column case this generalises, which is.)
+                foreach (static::get_key_names() as $pk_col) {
+                    unset($dirty[$pk_col]);
+                }
 
                 if (!empty($dirty)) {
-                    $dm->update($table)
+                    $query = $dm->update($table)
                         ->set($dirty)
-                        ->where(eq($table->$pk, $this[$pk]))
-                        ->execute();
+                        ->where($this->primary_key_condition($table));
+
+                    // Table::optimistic_locking() — guard the UPDATE with the
+                    // version this instance last read, whether or not the
+                    // version column itself is among the dirty fields (it
+                    // usually is not: nothing here ever sets it by hand).
+                    // QueryBuilder::build_update() bumps it unconditionally;
+                    // the in-memory copy below is kept in sync since this
+                    // does not re-SELECT after writing.
+                    if ($table->has_optimistic_locking()) {
+                        $version_column = $table->version_column();
+                        $query = $query->expect_version($this->original[$version_column] ?? null);
+                    }
+
+                    $query->execute();
+
+                    if ($table->has_optimistic_locking()) {
+                        $version_column = $table->version_column();
+                        $this->data[$version_column] = ($this->original[$version_column] ?? 0) + 1;
+                    }
                 }
             }
         } else {
@@ -135,8 +200,10 @@ trait Persistable
             // Use get_persistent_data() to exclude transient (dot-prefixed) keys
             $data = $this->get_persistent_data();
 
-            // Remove null primary key
-            if (isset($data[$pk]) && $data[$pk] === null) {
+            // Remove null primary key — auto-increment single-column keys
+            // only; a composite key has no such thing and every column must
+            // already be present, so this step does not apply to it.
+            if (!is_array($pk) && isset($data[$pk]) && $data[$pk] === null) {
                 unset($data[$pk]);
             }
 
@@ -144,10 +211,22 @@ trait Persistable
                 ->values($data)
                 ->execute();
 
-            // Get the auto-generated ID
-            $newId = $dm->last_insert_id();
-            if ($newId) {
-                $this->data[$pk] = (int) $newId;
+            // Get the auto-generated ID — again, single-column keys only.
+            if (!is_array($pk)) {
+                $new_id = $dm->last_insert_id();
+                if ($new_id) {
+                    $this->data[$pk] = (int) $new_id;
+                }
+            }
+
+            // QueryBuilder::build_insert() defaults Table::optimistic_locking()'s
+            // column to 1 when the caller did not set it — reflected here too,
+            // since this does not re-SELECT after writing.
+            if ($table->has_optimistic_locking()) {
+                $version_column = $table->version_column();
+                if (!array_key_exists($version_column, $data)) {
+                    $this->data[$version_column] = 1;
+                }
             }
         }
 
@@ -175,20 +254,21 @@ trait Persistable
 
         $dm = static::get_dm();
         $table = static::get_table();
-        $pk = static::$primary_key;
 
         // Run before_delete hooks
         $this->run_hooks('before_delete');
 
         $dm->delete($table)
-            ->where(eq($table->$pk, $this[$pk]))
+            ->where($this->primary_key_condition($table))
             ->execute();
 
         // Run after_delete hooks
         $this->run_hooks('after_delete');
 
         // Clear the primary key to mark as non-existent
-        unset($this->data[$pk]);
+        foreach (static::get_key_names() as $pk_col) {
+            unset($this->data[$pk_col]);
+        }
 
         return $this;
     }
@@ -210,9 +290,11 @@ trait Persistable
 
         $dm = static::get_dm();
         $table = static::get_table();
-        $pk = static::$primary_key;
 
-        $fresh = $dm->query_table($table)->find($this[$pk]);
+        // get_key() already returns the exact shape find() expects either
+        // way — a scalar for a single-column key, [column => value, ...]
+        // for a composite one.
+        $fresh = $dm->query_table($table)->find($this->get_key());
 
         if ($fresh === null) {
             throw new \RuntimeException('Record no longer exists in database');
@@ -226,6 +308,23 @@ trait Persistable
         $this->run_hooks('after_refresh');
 
         return $this;
+    }
+
+    /**
+     * A fluent, typed query — `->where()->with()->order_by()` in a chain,
+     * the same as `$dm->query_table($table)`, ending in an `ActiveRow`
+     * instance (or a list of them) instead of a plain array.
+     *
+     * `find()`/`find_all()`/`find_one()` below are unaffected by this and
+     * stay exactly as they are: this is a second way to reach the same
+     * `TableQuery`, not a replacement for the first.
+     *
+     * @example
+     * UserRow::query()->where(eq($users->role, 'admin'))->order_by(desc($users->id))->find_many();
+     */
+    public static function query(): TypedQuery
+    {
+        return new TypedQuery(static::get_dm()->query_table(static::get_table()), static::class);
     }
 
     /**
@@ -258,7 +357,7 @@ trait Persistable
     /**
      * Find multiple records
      *
-     * @param array $options Query options (where, with, order_by, limit, offset)
+     * @param array $options Query options (where, with, order_by, limit, offset, with_trashed, without_scopes)
      * @return array<static>
      */
     public static function find_all(array $options = []): array
@@ -277,8 +376,8 @@ trait Persistable
         }
 
         if (isset($options['order_by'])) {
-            $orderBy = is_array($options['order_by']) ? $options['order_by'] : [$options['order_by']];
-            $query = $query->order_by(...$orderBy);
+            $order_by = is_array($options['order_by']) ? $options['order_by'] : [$options['order_by']];
+            $query = $query->order_by(...$order_by);
         }
 
         if (isset($options['limit'])) {
@@ -287,6 +386,14 @@ trait Persistable
 
         if (isset($options['offset'])) {
             $query = $query->offset($options['offset']);
+        }
+
+        if (!empty($options['with_trashed'])) {
+            $query = $query->with_trashed();
+        }
+
+        if (isset($options['without_scopes'])) {
+            $query = $query->without_scopes($options['without_scopes'] === true ? [] : $options['without_scopes']);
         }
 
         $rows = $query->find_many();

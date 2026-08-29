@@ -1,9 +1,14 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - Help Command
  * 
  * @package Italix\Orm
- * @license Apache-2.0
+ * @license MPL-2.0
  */
 
 declare(strict_types=1);
@@ -59,8 +64,9 @@ class HelpCommand extends Command
         $this->line('    db:pull              Generate code from existing database schema');
         $this->line('    db:diff              Compare schema with database, suggest migration');
         $this->line('    db:squash            Squash migrations into a single file');
+        $this->line('    db:seed              Run a database seeder class');
         $this->line('');
-        
+
         $this->info('Global Options:');
         $this->line('    --config=<file>      Use specific config file');
         $this->line('    --path=<dir>         Migrations directory');

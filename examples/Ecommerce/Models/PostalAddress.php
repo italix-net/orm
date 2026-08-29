@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * PostalAddress Model
  *
@@ -318,13 +323,13 @@ class PostalAddress extends ActiveRow
         }
 
         // City, State ZIP
-        $cityLine = array_filter([
+        $city_line = array_filter([
             $this['address_locality'],
             $this['address_region'],
             $this['postal_code'],
         ]);
-        if (!empty($cityLine)) {
-            $lines[] = implode(' ', $cityLine);
+        if (!empty($city_line)) {
+            $lines[] = implode(' ', $city_line);
         }
 
         if ($this['address_country']) {

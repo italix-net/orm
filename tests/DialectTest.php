@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - SQL Dialect Test Suite
  * 
@@ -9,7 +14,26 @@
  * - Supabase (PostgreSQL-compatible)
  */
 
-require_once __DIR__ . '/../src/autoload.php';
+// The autoloader, wherever this package happens to sit. Composer first, because
+// `Italix\Contracts` is a real dependency and Composer is what resolves it; the
+// manual autoloader beside the source is the no-Composer fallback, and it now
+// knows about that namespace too.
+(static function (): void {
+    foreach ([
+        __DIR__ . '/../vendor/autoload.php',               // checked out on its own
+        __DIR__ . '/../../../../../vendor/autoload.php',   // vendored in a project
+        __DIR__ . '/../../../../vendor/autoload.php',      // installed as a package
+        __DIR__ . '/../../../autoload.php',                // sibling autoloader
+    ] as $autoload) {
+        if (is_file($autoload)) {
+            require_once $autoload;
+
+            return;
+        }
+    }
+
+    require_once __DIR__ . '/../src/autoload.php';
+})();
 
 use Italix\Orm\QueryBuilder\QueryBuilder;
 use Italix\Orm\Schema\Table;
@@ -27,25 +51,23 @@ use function Italix\Orm\Operators\{
     sql_count, sql_sum, raw
 };
 
-echo "===========================================\n";
-echo "  Italix ORM - SQL Dialect Test Suite\n";
-echo "===========================================\n\n";
+use function Italix\Testing\{suite, test as ix_test, summary};
 
-$passed = 0;
-$failed = 0;
+suite('Italix Orm - SQL dialects');
 
-function test($name, $condition, $details = '') {
-    global $passed, $failed;
-    if ($condition) {
-        echo "✓ PASS: {$name}\n";
-        $passed++;
-    } else {
-        echo "✗ FAIL: {$name}\n";
-        if ($details) {
-            echo "        Details: {$details}\n";
-        }
-        $failed++;
-    }
+
+/**
+ * This suite predates the shared runner and calls `test()` a few hundred times
+ * with the signature it has always had. The shim leaves every one of those call
+ * sites untouched and routes the result to `Italix\Testing\Runner`, so the
+ * assertions are counted by `ix test`, appear in the JUnit report, and stop
+ * being printed into a summary only a person reads.
+ *
+ * `(bool)` because the original tested truthiness while the runner takes a bool.
+ */
+function test($name, $condition, $details = ''): void
+{
+    ix_test((string) $name, (bool) $condition, (string) $details);
 }
 
 function create_test_table(string $dialect): Table {
@@ -124,19 +146,15 @@ foreach ($dialects as $dialect) {
         ->where(eq($users->name, 'Alice'))
         ->to_sql($params);
     
-    if (\in_array($dialect, ['postgresql', 'supabase'])) {
-        test(
-            "{$dialect}: Uses numbered placeholders (\$1)",
-            strpos($sql, '$1') !== false,
-            "SQL: {$sql}"
-        );
-    } else {
-        test(
-            "{$dialect}: Uses question mark placeholders",
-            strpos($sql, '?') !== false && strpos($sql, '$') === false,
-            "SQL: {$sql}"
-        );
-    }
+    // `?` on every dialect, PostgreSQL included. This used to expect `$1`
+    // there, which is libpq's form and not PDO's: PDO binds nothing to it, the
+    // server sees an unset parameter, and the query returns no rows and no
+    // error. The convention was wrong, so the test that enforced it was too.
+    test(
+        "{$dialect}: Uses question mark placeholders",
+        strpos($sql, '?') !== false && strpos($sql, '$') === false,
+        "SQL: {$sql}"
+    );
     
     // ============================================
     // Multiple Placeholder Tests
@@ -155,22 +173,17 @@ foreach ($dialects as $dialect) {
         )
         ->to_sql($params);
     
-    if (\in_array($dialect, ['postgresql', 'supabase'])) {
-        test(
-            "{$dialect}: Multiple numbered placeholders (\$1, \$2, \$3)",
-            strpos($sql, '$1') !== false && 
-            strpos($sql, '$2') !== false && 
-            strpos($sql, '$3') !== false,
-            "SQL: {$sql}"
-        );
-    } else {
-        $question_count = substr_count($sql, '?');
-        test(
-            "{$dialect}: Multiple question mark placeholders",
-            $question_count === 3,
-            "SQL: {$sql}, found {$question_count} placeholders"
-        );
-    }
+    $question_count = substr_count($sql, '?');
+    test(
+        "{$dialect}: Multiple question mark placeholders",
+        $question_count === 3,
+        "SQL: {$sql}, found {$question_count} placeholders"
+    );
+    test(
+        "{$dialect}: …and they are bound in the order they appear",
+        $params === ['Alice', 18, 'active'],
+        'params: ' . implode(', ', array_map('strval', $params))
+    );
     
     test(
         "{$dialect}: Correct number of params",
@@ -445,19 +458,11 @@ foreach ($dialects as $dialect) {
         ->where(sql_in_array($users->status, ['active', 'pending', 'verified']))
         ->to_sql($params);
     
-    if (\in_array($dialect, ['postgresql', 'supabase'])) {
-        test(
-            "{$dialect}: IN with numbered placeholders",
-            strpos($sql, 'IN ($1, $2, $3)') !== false,
-            "SQL: {$sql}"
-        );
-    } else {
-        test(
-            "{$dialect}: IN with ? placeholders",
-            strpos($sql, 'IN (?, ?, ?)') !== false,
-            "SQL: {$sql}"
-        );
-    }
+    test(
+        "{$dialect}: IN with ? placeholders",
+        strpos($sql, 'IN (?, ?, ?)') !== false,
+        "SQL: {$sql}"
+    );
     
     // ============================================
     // BETWEEN Tests
@@ -470,19 +475,11 @@ foreach ($dialects as $dialect) {
         ->where(between($users->age, 18, 65))
         ->to_sql($params);
     
-    if (\in_array($dialect, ['postgresql', 'supabase'])) {
-        test(
-            "{$dialect}: BETWEEN with numbered placeholders",
-            strpos($sql, 'BETWEEN $1 AND $2') !== false,
-            "SQL: {$sql}"
-        );
-    } else {
-        test(
-            "{$dialect}: BETWEEN with ? placeholders",
-            strpos($sql, 'BETWEEN ? AND ?') !== false,
-            "SQL: {$sql}"
-        );
-    }
+    test(
+        "{$dialect}: BETWEEN with ? placeholders",
+        strpos($sql, 'BETWEEN ? AND ?') !== false,
+        "SQL: {$sql}"
+    );
     
     // ============================================
     // IS NULL / IS NOT NULL Tests
@@ -637,14 +634,4 @@ test(
 // Summary
 // ============================================
 
-echo "\n===========================================\n";
-echo "  Test Results: {$passed} passed, {$failed} failed\n";
-echo "===========================================\n";
-
-if ($failed > 0) {
-    echo "  ⚠️  DIALECT ISSUES DETECTED!\n";
-    exit(1);
-} else {
-    echo "  ✅ All dialect tests passed!\n";
-    exit(0);
-}
+exit(summary());

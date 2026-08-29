@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow\Traits;
 
@@ -64,15 +69,15 @@ trait HasTimestamps
 
         // Set created_at for new records
         if (!$this->exists()) {
-            $createdAtColumn = static::$created_at_column;
-            if (!isset($this->data[$createdAtColumn])) {
-                $this->data[$createdAtColumn] = $now;
+            $created_at_column = static::$created_at_column;
+            if (!isset($this->data[$created_at_column])) {
+                $this->data[$created_at_column] = $now;
             }
         }
 
         // Always update updated_at
-        $updatedAtColumn = static::$updated_at_column;
-        $this->data[$updatedAtColumn] = $now;
+        $updated_at_column = static::$updated_at_column;
+        $this->data[$updated_at_column] = $now;
     }
 
     /**
@@ -180,12 +185,12 @@ trait HasTimestamps
      */
     public function was_recently_created(int $seconds = 60): bool
     {
-        $createdAt = $this->get_created_at_datetime();
-        if ($createdAt === null) {
+        $created_at = $this->get_created_at_datetime();
+        if ($created_at === null) {
             return false;
         }
 
-        $diff = (new \DateTime())->getTimestamp() - $createdAt->getTimestamp();
+        $diff = (new \DateTime())->getTimestamp() - $created_at->getTimestamp();
         return $diff <= $seconds;
     }
 
@@ -197,12 +202,12 @@ trait HasTimestamps
      */
     public function was_recently_updated(int $seconds = 60): bool
     {
-        $updatedAt = $this->get_updated_at_datetime();
-        if ($updatedAt === null) {
+        $updated_at = $this->get_updated_at_datetime();
+        if ($updated_at === null) {
             return false;
         }
 
-        $diff = (new \DateTime())->getTimestamp() - $updatedAt->getTimestamp();
+        $diff = (new \DateTime())->getTimestamp() - $updated_at->getTimestamp();
         return $diff <= $seconds;
     }
 }

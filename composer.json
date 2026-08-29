@@ -2,29 +2,22 @@
     "name": "italix/orm",
     "description": "A lightweight, type-safe ORM for PHP with migrations, query builder, and support for MySQL, PostgreSQL, SQLite, and Supabase",
     "type": "library",
+    "version": "2.30.1",
     "keywords": [
         "orm",
         "database",
+        "migrations",
+        "query-builder",
         "mysql",
         "postgresql",
         "sqlite",
-        "supabase",
-        "query-builder",
-        "migrations",
-        "schema",
-        "pdo",
-        "relations",
-        "eager-loading",
-        "drizzle",
-        "forms",
-        "form-integration",
-        "delegated-types"
+        "supabase"
     ],
     "bin": [
         "bin/ix"
     ],
     "homepage": "https://github.com/italix-net/orm",
-    "license": "Apache-2.0",
+    "license": "MPL-2.0",
     "authors": [
         {
             "name": "Italix",
@@ -32,39 +25,69 @@
         }
     ],
     "require": {
-        "php": ">=7.4",
+        "php": ">=8.1",
         "ext-pdo": "*",
-        "italix/contracts": "^1.0"
+        "italix/contracts": "^2.0"
     },
     "require-dev": {
+        "italix/rules": "^4.0",
+        "italix/testing": "^2.0",
         "phpunit/phpunit": "^9.0"
     },
     "suggest": {
         "ext-pdo_mysql": "Required for MySQL support",
         "ext-pdo_pgsql": "Required for PostgreSQL/Supabase support",
         "ext-pdo_sqlite": "Required for SQLite support",
-        "italix/forms": "Form metadata, validation, and HTML rendering library - works seamlessly with italix/orm"
+        "italix/cache": "A Italix\\Contracts\\Cache implementation for QueryCache",
+        "italix/forms": "Form metadata, validation, and HTML rendering library - works seamlessly with italix/orm",
+        "italix/rules": "Runs the schedules SchemaRules derives; DatabaseRules settles the unique/exists it defers"
     },
     "autoload": {
         "psr-4": {
             "Italix\\Orm\\": "src/"
-        },
-        "files": [
-            "src/functions.php",
-            "src/Schema/ColumnTypes.php",
-            "src/Schema/PolymorphicColumn.php",
-            "src/Operators/Operators.php",
-            "src/Relations/functions.php",
-            "src/ActiveRow/functions.php"
-        ]
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "Italix\\Orm\\Tests\\": "tests/"
         }
     },
     "scripts": {
-        "test": "phpunit"
+        "test": [
+            "php tests/ActiveRowTest.php",
+            "php tests/DialectTest.php",
+            "php tests/MigrationTest.php",
+            "php tests/RelationsTest.php",
+            "php tests/SecurityTest.php",
+            "php tests/SubqueryTest.php",
+            "php tests/EagerLoadingTest.php",
+            "php tests/TransactionTest.php",
+            "php tests/ViewTest.php",
+            "php tests/OperandsTest.php",
+            "php tests/WindowTest.php",
+            "php tests/IterationTest.php",
+            "php tests/MaterializedViewTest.php",
+            "php tests/PostgresTest.php",
+            "php tests/SchemaRulesTest.php",
+            "php tests/QueryCacheTest.php",
+            "php tests/BatchTest.php",
+            "php tests/ReplicaTest.php",
+            "php tests/IntrospectionTest.php",
+            "php tests/JsonTest.php",
+            "php tests/SchemaDiffTest.php",
+            "php tests/ProfilingTest.php",
+            "php tests/CheckAndEnumTest.php",
+            "php tests/DelegatedTypesFromSchemaTest.php",
+            "php tests/TimestampsAndSoftDeleteTest.php",
+            "php tests/RelationClassDerivationTest.php",
+            "php tests/TypedQueryTest.php",
+            "php tests/BooleanLogicTest.php",
+            "php tests/CompositeKeyFindTest.php",
+            "php tests/CompositePrimaryKeyTest.php",
+            "php tests/AttributeCastingTest.php",
+            "php tests/HooksTest.php",
+            "php tests/GlobalScopesTest.php",
+            "php tests/OptimisticLockingTest.php",
+            "php tests/ActiveRowCompositeKeyTest.php",
+            "php tests/FulltextSearchTest.php",
+            "php tests/FactoriesAndSeedersTest.php",
+            "php tests/TransactionHooksTest.php"
+        ]
     },
     "minimum-stability": "stable",
     "prefer-stable": true

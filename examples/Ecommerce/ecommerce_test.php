@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * E-commerce Test Suite
  *
@@ -387,14 +392,14 @@ class EcommerceTestRunner
             'download_expiry_days' => 365,
         ]);
 
-        $ebookDelegate = $ebook->delegate();
-        $this->assert('E-book is virtual', $ebookDelegate->is_virtual() === true);
-        $this->assert('E-book is downloadable', $ebookDelegate->is_downloadable() === true);
-        $this->assert('E-book is not physical', $ebookDelegate->is_physical() === false);
-        $this->assert('E-book is not service', $ebookDelegate->is_service() === false);
-        $this->assert('E-book download_limit is 5', $ebookDelegate->download_limit() === 5);
-        $this->assert('E-book download_expiry_days is 365', $ebookDelegate->download_expiry_days() === 365);
-        $this->assert('E-book product_type is DownloadableProduct', $ebookDelegate->product_type() === 'DownloadableProduct');
+        $ebook_delegate = $ebook->delegate();
+        $this->assert('E-book is virtual', $ebook_delegate->is_virtual() === true);
+        $this->assert('E-book is downloadable', $ebook_delegate->is_downloadable() === true);
+        $this->assert('E-book is not physical', $ebook_delegate->is_physical() === false);
+        $this->assert('E-book is not service', $ebook_delegate->is_service() === false);
+        $this->assert('E-book download_limit is 5', $ebook_delegate->download_limit() === 5);
+        $this->assert('E-book download_expiry_days is 365', $ebook_delegate->download_expiry_days() === 365);
+        $this->assert('E-book product_type is DownloadableProduct', $ebook_delegate->product_type() === 'DownloadableProduct');
 
         // Create a service product (consultation)
         $consultation = Thing::create_product([
@@ -408,28 +413,28 @@ class EcommerceTestRunner
             'service_duration' => '1 hour',
         ]);
 
-        $serviceDelegate = $consultation->delegate();
-        $this->assert('Service is virtual', $serviceDelegate->is_virtual() === true);
-        $this->assert('Service is not downloadable', $serviceDelegate->is_downloadable() === false);
-        $this->assert('Service is_service is true', $serviceDelegate->is_service() === true);
-        $this->assert('Service product_type is ServiceProduct', $serviceDelegate->product_type() === 'ServiceProduct');
-        $this->assert('Service duration is correct', $serviceDelegate->service_duration() === '1 hour');
+        $service_delegate = $consultation->delegate();
+        $this->assert('Service is virtual', $service_delegate->is_virtual() === true);
+        $this->assert('Service is not downloadable', $service_delegate->is_downloadable() === false);
+        $this->assert('Service is_service is true', $service_delegate->is_service() === true);
+        $this->assert('Service product_type is ServiceProduct', $service_delegate->product_type() === 'ServiceProduct');
+        $this->assert('Service duration is correct', $service_delegate->service_duration() === '1 hour');
 
         // Create a physical product for comparison
-        $physicalProduct = Thing::create_product([
+        $physical_product = Thing::create_product([
             'name' => 'PHP Book (Printed)',
         ], [
             'sku' => 'BOOK-PHP-001',
             'price' => 49.99,
         ]);
 
-        $physicalDelegate = $physicalProduct->delegate();
-        $this->assert('Physical product is not virtual', $physicalDelegate->is_virtual() === false);
-        $this->assert('Physical product is_physical is true', $physicalDelegate->is_physical() === true);
-        $this->assert('Physical product_type is Product', $physicalDelegate->product_type() === 'Product');
+        $physical_delegate = $physical_product->delegate();
+        $this->assert('Physical product is not virtual', $physical_delegate->is_virtual() === false);
+        $this->assert('Physical product is_physical is true', $physical_delegate->is_physical() === true);
+        $this->assert('Physical product_type is Product', $physical_delegate->product_type() === 'Product');
 
         // Test Schema.org output for virtual products
-        $schema = $ebookDelegate->to_schema_org($ebook);
+        $schema = $ebook_delegate->to_schema_org($ebook);
         $this->assert('Schema.org has additionalType for downloadable', isset($schema['additionalType']));
         $this->assert('Schema.org additionalType is DigitalDocument', str_contains($schema['additionalType'], 'DigitalDocument'));
 
@@ -458,11 +463,11 @@ class EcommerceTestRunner
         $this->assert('Person is_person flag', $person['is_person'] === true);
         $this->assert('Person is_organization flag false', $person['is_organization'] === false);
 
-        $personDelegate = $person->delegate();
-        $this->assert('Person delegate is Person instance', $personDelegate instanceof Person);
-        $this->assert('Person given_name correct', $personDelegate->given_name() === 'John');
-        $this->assert('Person family_name correct', $personDelegate->family_name() === 'Doe');
-        $this->assert('Person display_name correct', $personDelegate->display_name() === 'Mr. John Doe');
+        $person_delegate = $person->delegate();
+        $this->assert('Person delegate is Person instance', $person_delegate instanceof Person);
+        $this->assert('Person given_name correct', $person_delegate->given_name() === 'John');
+        $this->assert('Person family_name correct', $person_delegate->family_name() === 'Doe');
+        $this->assert('Person display_name correct', $person_delegate->display_name() === 'Mr. John Doe');
 
         // Create an Organization customer
         $org = Customer::create_organization([
@@ -480,29 +485,29 @@ class EcommerceTestRunner
         $this->assert('Organization type is correct', $org['type'] === 'Organization');
         $this->assert('Organization is_organization flag', $org['is_organization'] === true);
 
-        $orgDelegate = $org->delegate();
-        $this->assert('Org delegate is Organization instance', $orgDelegate instanceof Organization);
-        $this->assert('Org has_vat returns true', $orgDelegate->has_vat() === true);
-        $this->assert('Org vat_country is IT', $orgDelegate->vat_country() === 'IT');
-        $this->assert('Org display_name uses trading name', $orgDelegate->display_name() === 'ACME Corp');
+        $org_delegate = $org->delegate();
+        $this->assert('Org delegate is Organization instance', $org_delegate instanceof Organization);
+        $this->assert('Org has_vat returns true', $org_delegate->has_vat() === true);
+        $this->assert('Org vat_country is IT', $org_delegate->vat_country() === 'IT');
+        $this->assert('Org display_name uses trading name', $org_delegate->display_name() === 'ACME Corp');
 
         // Test auto-detection (with VAT = Organization)
-        $autoOrg = Customer::create_auto([
+        $auto_org = Customer::create_auto([
             'email' => 'billing@business.com',
         ], [
             'vat_id' => 'DE123456789',
             'legal_name' => 'German Business GmbH',
         ]);
-        $this->assert('Auto-detect with VAT creates Organization', $autoOrg->is_organization() === true);
+        $this->assert('Auto-detect with VAT creates Organization', $auto_org->is_organization() === true);
 
         // Test auto-detection (without VAT = Person)
-        $autoPerson = Customer::create_auto([
+        $auto_person = Customer::create_auto([
             'email' => 'personal@email.com',
         ], [
             'given_name' => 'Alice',
             'family_name' => 'Smith',
         ]);
-        $this->assert('Auto-detect without VAT creates Person', $autoPerson->is_person() === true);
+        $this->assert('Auto-detect without VAT creates Person', $auto_person->is_person() === true);
 
         // Test find_by_email
         $found = Customer::find_by_email('john.doe@example.com');
@@ -561,8 +566,8 @@ class EcommerceTestRunner
         $this->assert('Formatted address includes city', strpos($formatted, 'New York') !== false);
 
         // Test one_line output
-        $oneLine = $billing->one_line();
-        $this->assert('One-line has city', strpos($oneLine, 'New York') !== false);
+        $one_line = $billing->one_line();
+        $this->assert('One-line has city', strpos($one_line, 'New York') !== false);
 
         // Test find_by_owner
         $addresses = PostalAddress::find_by_owner($customer);
@@ -632,19 +637,19 @@ class EcommerceTestRunner
         $this->assert('Order can_cancel returns true', $delegate->can_cancel() === true);
 
         // Test customer relationship
-        $orderCustomer = $delegate->customer();
-        $this->assert('Order has customer', $orderCustomer !== null);
-        $this->assert('Order customer email matches', $orderCustomer['email'] === 'order.customer@example.com');
+        $order_customer = $delegate->customer();
+        $this->assert('Order has customer', $order_customer !== null);
+        $this->assert('Order customer email matches', $order_customer['email'] === 'order.customer@example.com');
         $this->assert('Order customer_name method', $delegate->customer_name() === 'John Doe');
         $this->assert('Order customer_is_person', $delegate->customer_is_person() === true);
 
         // Test address relationships
-        $billingAddr = $delegate->billing_address();
-        $this->assert('Order has billing address', $billingAddr !== null);
-        $this->assert('Billing address city', $billingAddr->city() === 'City');
+        $billing_addr = $delegate->billing_address();
+        $this->assert('Order has billing address', $billing_addr !== null);
+        $this->assert('Billing address city', $billing_addr->city() === 'City');
 
-        $deliveryAddr = $delegate->delivery_address();
-        $this->assert('Order has delivery address', $deliveryAddr !== null);
+        $delivery_addr = $delegate->delivery_address();
+        $this->assert('Order has delivery address', $delivery_addr !== null);
         $this->assert('Same billing/delivery', $delegate->same_billing_delivery() === true);
 
         echo "\n";
@@ -787,7 +792,7 @@ class EcommerceTestRunner
         ]);
 
         // Create main bundle order item
-        $bundleItem = Thing::create_order_item($order, $bundle, 1, [
+        $bundle_item = Thing::create_order_item($order, $bundle, 1, [
             'name' => 'PHP Developer Starter Kit',
         ], [
             'order_item_number' => 'ITEM-BUNDLE-001',
@@ -796,65 +801,65 @@ class EcommerceTestRunner
         ]);
 
         // Create component items (part of bundle)
-        $bookItem = Thing::create_order_item($order, $book, 1, [
+        $book_item = Thing::create_order_item($order, $book, 1, [
             'name' => '[Bundle: PHP Developer Starter Kit] PHP Programming Book',
         ], [
             'order_item_number' => 'ITEM-BUNDLE-001-A',
             'unit_price' => 0,
             'line_total' => 0,
-            'parent_bundle_item_id' => $bundleItem['id'],
+            'parent_bundle_item_id' => $bundle_item['id'],
             'is_bundle_component' => true,
         ]);
 
-        $courseItem = Thing::create_order_item($order, $course, 1, [
+        $course_item = Thing::create_order_item($order, $course, 1, [
             'name' => '[Bundle: PHP Developer Starter Kit] PHP Video Course',
         ], [
             'order_item_number' => 'ITEM-BUNDLE-001-B',
             'unit_price' => 0,
             'line_total' => 0,
-            'parent_bundle_item_id' => $bundleItem['id'],
+            'parent_bundle_item_id' => $bundle_item['id'],
             'is_bundle_component' => true,
         ]);
 
-        $toolsItem = Thing::create_order_item($order, $tools, 1, [
+        $tools_item = Thing::create_order_item($order, $tools, 1, [
             'name' => '[Bundle: PHP Developer Starter Kit] PHP IDE License',
         ], [
             'order_item_number' => 'ITEM-BUNDLE-001-C',
             'unit_price' => 0,
             'line_total' => 0,
-            'parent_bundle_item_id' => $bundleItem['id'],
+            'parent_bundle_item_id' => $bundle_item['id'],
             'is_bundle_component' => true,
         ]);
 
         // Test bundle item properties
-        $bundleDelegate = $bundleItem->delegate();
-        $this->assert('Bundle item is_bundle_component is false', $bundleDelegate->is_bundle_component() === false);
-        $this->assert('Bundle item is_bundle is true', $bundleDelegate->is_bundle() === true);
+        $bundle_delegate = $bundle_item->delegate();
+        $this->assert('Bundle item is_bundle_component is false', $bundle_delegate->is_bundle_component() === false);
+        $this->assert('Bundle item is_bundle is true', $bundle_delegate->is_bundle() === true);
 
         // Test component item properties
-        $bookDelegate = $bookItem->delegate();
-        $this->assert('Component item is_bundle_component is true', $bookDelegate->is_bundle_component() === true);
-        $this->assert('Component item is_bundle is false', $bookDelegate->is_bundle() === false);
+        $book_delegate = $book_item->delegate();
+        $this->assert('Component item is_bundle_component is true', $book_delegate->is_bundle_component() === true);
+        $this->assert('Component item is_bundle is false', $book_delegate->is_bundle() === false);
 
         // Test parent_bundle_item relationship
-        $parentItem = $bookDelegate->parent_bundle_item();
-        $this->assert('Component has parent_bundle_item', $parentItem !== null);
-        $this->assert('Parent bundle item is correct', $parentItem['id'] === $bundleItem['id']);
+        $parent_item = $book_delegate->parent_bundle_item();
+        $this->assert('Component has parent_bundle_item', $parent_item !== null);
+        $this->assert('Parent bundle item is correct', $parent_item['id'] === $bundle_item['id']);
 
         // Test bundle_components relationship
-        $components = $bundleDelegate->bundle_components();
+        $components = $bundle_delegate->bundle_components();
         $this->assert('Bundle has 3 components', count($components) === 3);
 
         // Verify component products include virtual products
-        $hasVirtualComponent = false;
+        $has_virtual_component = false;
         foreach ($components as $component) {
             $product = $component->delegate()->product();
             if ($product && $product->delegate()->is_virtual()) {
-                $hasVirtualComponent = true;
+                $has_virtual_component = true;
                 break;
             }
         }
-        $this->assert('Bundle includes virtual product components', $hasVirtualComponent === true);
+        $this->assert('Bundle includes virtual product components', $has_virtual_component === true);
 
         echo "\n";
     }
@@ -958,24 +963,24 @@ class EcommerceTestRunner
         $this->assert('orders() returns 3 orders', count($orders) === 3);
 
         // Test total_spent
-        $totalSpent = $customer->total_spent();
-        $this->assert('Total spent is $225.00', $totalSpent === 225.00);
+        $total_spent = $customer->total_spent();
+        $this->assert('Total spent is $225.00', $total_spent === 225.00);
 
         // Test average_order_value
-        $avgValue = $customer->average_order_value();
-        $this->assert('Average order value is $75.00', $avgValue === 75.00);
+        $avg_value = $customer->average_order_value();
+        $this->assert('Average order value is $75.00', $avg_value === 75.00);
 
         // Test first_order_date
-        $firstDate = $customer->first_order_date();
-        $this->assert('First order date is 2024-01-15', strpos($firstDate, '2024-01-15') === 0);
+        $first_date = $customer->first_order_date();
+        $this->assert('First order date is 2024-01-15', strpos($first_date, '2024-01-15') === 0);
 
         // Test last_order_date
-        $lastDate = $customer->last_order_date();
-        $this->assert('Last order date is 2024-03-10', strpos($lastDate, '2024-03-10') === 0);
+        $last_date = $customer->last_order_date();
+        $this->assert('Last order date is 2024-03-10', strpos($last_date, '2024-03-10') === 0);
 
         // Test average_days_between_orders
-        $avgDays = $customer->average_days_between_orders();
-        $this->assert('Average days between orders calculated', $avgDays !== null && $avgDays > 0);
+        $avg_days = $customer->average_days_between_orders();
+        $this->assert('Average days between orders calculated', $avg_days !== null && $avg_days > 0);
 
         // Test customer addresses
         $addresses = $customer->addresses();

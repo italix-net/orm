@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 
 namespace Italix\Orm\ActiveRow\Traits;
 
@@ -118,45 +123,114 @@ trait DelegatedTypes
     // =========================================
 
     /**
-     * Map of type names to ActiveRow classes
-     * Override this method to define your delegated types.
+     * The bound schema `Table`, if this class also uses `Persistable` and has
+     * called `set_persistence()`. `null` otherwise — including when
+     * `Persistable` is not used at all, which is a supported way to use this
+     * trait on its own (wrapping already-fetched arrays with no database
+     * connection of its own).
+     *
+     * The four methods below read this by default rather than re-declaring
+     * the same configuration a second time: `Table::delegates()` (and
+     * `type_column()`, `type_path_column()`, `delegate_foreign_key()`) is
+     * already the single place a schema says how a table's rows delegate,
+     * because the Data Mapper side (`$dm->query_table($table)`) needs it
+     * there regardless of whether any `ActiveRow` class exists. Overriding
+     * any of the four methods in a subclass still wins, exactly as before —
+     * this only changes what happens when nobody bothers to.
+     */
+    protected function schema_table(): ?\Italix\Orm\Schema\Table
+    {
+        if (!method_exists(static::class, 'has_persistence') || !static::has_persistence()) {
+            return null;
+        }
+
+        return static::get_table();
+    }
+
+    /**
+     * Map of type names to ActiveRow classes. Override this method to define
+     * your delegated types explicitly — or leave it, and it is derived from
+     * the bound `Table`'s own `->delegates([...])`, matching each delegate
+     * `Table` to whichever `ActiveRow` class (if any) called
+     * `set_persistence()` with that exact table. A delegate type with no
+     * registered class is left out, the same as before this existed: nothing
+     * here can wrap a row in a class it has never heard of.
      *
      * @return array<string, class-string<ActiveRow>>
      */
     protected function get_delegated_types(): array
     {
-        return [];
+        $table = $this->schema_table();
+
+        if ($table === null || !$table->has_delegates()) {
+            return [];
+        }
+
+        $types = [];
+
+        foreach ($table->get_delegate_tables() as $type => $delegate_table) {
+            if (!($delegate_table instanceof \Italix\Orm\Schema\Table)) {
+                continue;
+            }
+
+            $class = \Italix\Orm\ActiveRow\ActiveRowRegistry::class_for_table($delegate_table);
+
+            if ($class !== null) {
+                $types[$type] = $class;
+            }
+        }
+
+        return $types;
     }
 
     /**
-     * Column that stores the type name
+     * Column that stores the type name — read from the bound `Table` when
+     * there is one, since `Table::type_column()` is the same fact `with()`
+     * already needs in order to load a delegate at all.
      *
      * @return string
      */
     protected function get_type_column(): string
     {
-        return 'type';
+        return $this->schema_table()?->get_type_column() ?? 'type';
     }
 
     /**
-     * Column that stores the hierarchy path (optional)
-     * Set to null to disable hierarchy path support.
+     * Column that stores the hierarchy path (optional). `null` disables
+     * hierarchy path support.
+     *
+     * When a `Table` is bound and configured for delegation, its answer is
+     * trusted exactly as given — including `null`, if that table's schema
+     * never called `type_path_column()`. That is a real behaviour change
+     * from the `'type_path'` this method used to return unconditionally: a
+     * class that binds to such a table and never overrode this method before
+     * now gets hierarchy paths disabled instead of a column that was never
+     * declared. A class with no bound table, or one not configured for
+     * delegation, is unaffected.
      *
      * @return string|null
      */
     protected function get_type_path_column(): ?string
     {
+        $table = $this->schema_table();
+
+        if ($table !== null && $table->has_delegates()) {
+            return $table->get_type_path_column();
+        }
+
         return 'type_path';
     }
 
     /**
-     * Foreign key column in delegate tables pointing back to this table
+     * Foreign key column in delegate tables pointing back to this table —
+     * read from the bound `Table` when there is one. `Table`'s own default
+     * is already `'thing_id'`, so this is safe to read unconditionally.
      *
      * @return string
      */
     protected function get_delegate_foreign_key(): string
     {
-        return 'thing_id';
+        return $this->schema_table()?->get_delegate_foreign_key() ?? 'thing_id';
     }
 
     // =========================================

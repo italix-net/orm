@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * WooCommerce REST API Client
  *
@@ -16,10 +21,10 @@ namespace Examples\Ecommerce\WooCommerce;
  */
 class WooCommerceClient
 {
-    private string $siteUrl;
-    private string $consumerKey;
-    private string $consumerSecret;
-    private string $apiVersion;
+    private string $site_url;
+    private string $consumer_key;
+    private string $consumer_secret;
+    private string $api_version;
     private bool $debug;
 
     /**
@@ -30,16 +35,16 @@ class WooCommerceClient
      * @param bool $debug Enable debug output
      */
     public function __construct(
-        string $siteUrl,
-        string $consumerKey,
-        string $consumerSecret,
-        string $apiVersion = 'wc/v3',
+        string $site_url,
+        string $consumer_key,
+        string $consumer_secret,
+        string $api_version = 'wc/v3',
         bool $debug = false
     ) {
-        $this->siteUrl = rtrim($siteUrl, '/');
-        $this->consumerKey = $consumerKey;
-        $this->consumerSecret = $consumerSecret;
-        $this->apiVersion = $apiVersion;
+        $this->site_url = rtrim($site_url, '/');
+        $this->consumer_key = $consumer_key;
+        $this->consumer_secret = $consumer_secret;
+        $this->api_version = $api_version;
         $this->debug = $debug;
     }
 
@@ -53,9 +58,9 @@ class WooCommerceClient
      * @param array $productData Product data
      * @return array|null Created product data or null on failure
      */
-    public function createProduct(array $productData): ?array
+    public function create_product(array $product_data): ?array
     {
-        return $this->request('POST', 'products', $productData);
+        return $this->request('POST', 'products', $product_data);
     }
 
     /**
@@ -65,9 +70,9 @@ class WooCommerceClient
      * @param array $productData Product data to update
      * @return array|null Updated product data or null on failure
      */
-    public function updateProduct(int $productId, array $productData): ?array
+    public function update_product(int $product_id, array $product_data): ?array
     {
-        return $this->request('PUT', "products/{$productId}", $productData);
+        return $this->request('PUT', "products/{$product_id}", $product_data);
     }
 
     /**
@@ -76,9 +81,9 @@ class WooCommerceClient
      * @param int $productId
      * @return array|null
      */
-    public function getProduct(int $productId): ?array
+    public function get_product(int $product_id): ?array
     {
-        return $this->request('GET', "products/{$productId}");
+        return $this->request('GET', "products/{$product_id}");
     }
 
     /**
@@ -87,7 +92,7 @@ class WooCommerceClient
      * @param array $params Query parameters (per_page, page, sku, etc.)
      * @return array
      */
-    public function getProducts(array $params = []): array
+    public function get_products(array $params = []): array
     {
         $result = $this->request('GET', 'products', null, $params);
         return $result ?? [];
@@ -99,9 +104,9 @@ class WooCommerceClient
      * @param string $sku
      * @return array|null
      */
-    public function findProductBySku(string $sku): ?array
+    public function find_product_by_sku(string $sku): ?array
     {
-        $products = $this->getProducts(['sku' => $sku]);
+        $products = $this->get_products(['sku' => $sku]);
         return $products[0] ?? null;
     }
 
@@ -112,9 +117,9 @@ class WooCommerceClient
      * @param bool $force Force delete (bypass trash)
      * @return bool
      */
-    public function deleteProduct(int $productId, bool $force = false): bool
+    public function delete_product(int $product_id, bool $force = false): bool
     {
-        $result = $this->request('DELETE', "products/{$productId}", null, ['force' => $force]);
+        $result = $this->request('DELETE', "products/{$product_id}", null, ['force' => $force]);
         return $result !== null;
     }
 
@@ -129,9 +134,9 @@ class WooCommerceClient
      * @param array $variationData Variation data
      * @return array|null
      */
-    public function createVariation(int $productId, array $variationData): ?array
+    public function create_variation(int $product_id, array $variation_data): ?array
     {
-        return $this->request('POST', "products/{$productId}/variations", $variationData);
+        return $this->request('POST', "products/{$product_id}/variations", $variation_data);
     }
 
     /**
@@ -142,9 +147,9 @@ class WooCommerceClient
      * @param array $variationData Variation data
      * @return array|null
      */
-    public function updateVariation(int $productId, int $variationId, array $variationData): ?array
+    public function update_variation(int $product_id, int $variation_id, array $variation_data): ?array
     {
-        return $this->request('PUT', "products/{$productId}/variations/{$variationId}", $variationData);
+        return $this->request('PUT', "products/{$product_id}/variations/{$variation_id}", $variation_data);
     }
 
     /**
@@ -153,9 +158,9 @@ class WooCommerceClient
      * @param int $productId
      * @return array
      */
-    public function getVariations(int $productId): array
+    public function get_variations(int $product_id): array
     {
-        $result = $this->request('GET', "products/{$productId}/variations");
+        $result = $this->request('GET', "products/{$product_id}/variations");
         return $result ?? [];
     }
 
@@ -167,9 +172,9 @@ class WooCommerceClient
      * @param bool $force Force delete
      * @return bool
      */
-    public function deleteVariation(int $productId, int $variationId, bool $force = false): bool
+    public function delete_variation(int $product_id, int $variation_id, bool $force = false): bool
     {
-        $result = $this->request('DELETE', "products/{$productId}/variations/{$variationId}", null, ['force' => $force]);
+        $result = $this->request('DELETE', "products/{$product_id}/variations/{$variation_id}", null, ['force' => $force]);
         return $result !== null;
     }
 
@@ -182,7 +187,7 @@ class WooCommerceClient
      *
      * @return array
      */
-    public function getAttributes(): array
+    public function get_attributes(): array
     {
         $result = $this->request('GET', 'products/attributes');
         return $result ?? [];
@@ -194,9 +199,9 @@ class WooCommerceClient
      * @param string $slug
      * @return array|null
      */
-    public function getAttributeBySlug(string $slug): ?array
+    public function get_attribute_by_slug(string $slug): ?array
     {
-        $attributes = $this->getAttributes();
+        $attributes = $this->get_attributes();
         foreach ($attributes as $attr) {
             if ($attr['slug'] === $slug) {
                 return $attr;
@@ -211,9 +216,9 @@ class WooCommerceClient
      * @param array $attributeData
      * @return array|null
      */
-    public function createAttribute(array $attributeData): ?array
+    public function create_attribute(array $attribute_data): ?array
     {
-        return $this->request('POST', 'products/attributes', $attributeData);
+        return $this->request('POST', 'products/attributes', $attribute_data);
     }
 
     /**
@@ -222,9 +227,9 @@ class WooCommerceClient
      * @param int $attributeId
      * @return array
      */
-    public function getAttributeTerms(int $attributeId): array
+    public function get_attribute_terms(int $attribute_id): array
     {
-        $result = $this->request('GET', "products/attributes/{$attributeId}/terms");
+        $result = $this->request('GET', "products/attributes/{$attribute_id}/terms");
         return $result ?? [];
     }
 
@@ -235,9 +240,9 @@ class WooCommerceClient
      * @param array $termData
      * @return array|null
      */
-    public function createAttributeTerm(int $attributeId, array $termData): ?array
+    public function create_attribute_term(int $attribute_id, array $term_data): ?array
     {
-        return $this->request('POST', "products/attributes/{$attributeId}/terms", $termData);
+        return $this->request('POST', "products/attributes/{$attribute_id}/terms", $term_data);
     }
 
     // =========================================
@@ -250,7 +255,7 @@ class WooCommerceClient
      * @param array $params Query parameters
      * @return array
      */
-    public function getCategories(array $params = []): array
+    public function get_categories(array $params = []): array
     {
         $result = $this->request('GET', 'products/categories', null, $params);
         return $result ?? [];
@@ -262,9 +267,9 @@ class WooCommerceClient
      * @param string $slug
      * @return array|null
      */
-    public function findCategoryBySlug(string $slug): ?array
+    public function find_category_by_slug(string $slug): ?array
     {
-        $categories = $this->getCategories(['slug' => $slug]);
+        $categories = $this->get_categories(['slug' => $slug]);
         return $categories[0] ?? null;
     }
 
@@ -274,9 +279,9 @@ class WooCommerceClient
      * @param array $categoryData
      * @return array|null
      */
-    public function createCategory(array $categoryData): ?array
+    public function create_category(array $category_data): ?array
     {
-        return $this->request('POST', 'products/categories', $categoryData);
+        return $this->request('POST', 'products/categories', $category_data);
     }
 
     // =========================================
@@ -289,7 +294,7 @@ class WooCommerceClient
      * @param array $data ['create' => [...], 'update' => [...], 'delete' => [...]]
      * @return array|null
      */
-    public function batchProducts(array $data): ?array
+    public function batch_products(array $data): ?array
     {
         return $this->request('POST', 'products/batch', $data);
     }
@@ -301,9 +306,9 @@ class WooCommerceClient
      * @param array $data ['create' => [...], 'update' => [...], 'delete' => [...]]
      * @return array|null
      */
-    public function batchVariations(int $productId, array $data): ?array
+    public function batch_variations(int $product_id, array $data): ?array
     {
-        return $this->request('POST', "products/{$productId}/variations/batch", $data);
+        return $this->request('POST', "products/{$product_id}/variations/batch", $data);
     }
 
     // =========================================
@@ -319,23 +324,23 @@ class WooCommerceClient
      *
      * @return bool
      */
-    public function hasBundleSupport(): bool
+    public function has_bundle_support(): bool
     {
-        if (isset($this->bundleSupportChecked)) {
-            return $this->bundleSupportChecked;
+        if (isset($this->bundle_support_checked)) {
+            return $this->bundle_support_checked;
         }
 
         // Try to get system status and check for bundle plugin
-        $status = $this->getSystemStatus();
+        $status = $this->get_system_status();
 
         if ($status && isset($status['active_plugins'])) {
             foreach ($status['active_plugins'] as $plugin) {
-                $pluginName = strtolower($plugin['plugin'] ?? $plugin['name'] ?? '');
+                $plugin_name = strtolower($plugin['plugin'] ?? $plugin['name'] ?? '');
                 if (
-                    str_contains($pluginName, 'product-bundles') ||
-                    str_contains($pluginName, 'woocommerce-product-bundles')
+                    str_contains($plugin_name, 'product-bundles') ||
+                    str_contains($plugin_name, 'woocommerce-product-bundles')
                 ) {
-                    $this->bundleSupportChecked = true;
+                    $this->bundle_support_checked = true;
                     return true;
                 }
             }
@@ -343,11 +348,11 @@ class WooCommerceClient
 
         // Alternative: try to create a bundle product type and see if it's accepted
         // This is a lightweight check that doesn't require plugin list access
-        $this->bundleSupportChecked = false;
+        $this->bundle_support_checked = false;
         return false;
     }
 
-    private bool $bundleSupportChecked;
+    private bool $bundle_support_checked;
 
     /**
      * Create a bundle product (requires WooCommerce Product Bundles plugin)
@@ -355,10 +360,10 @@ class WooCommerceClient
      * @param array $productData Product data including 'bundled_items'
      * @return array|null
      */
-    public function createBundleProduct(array $productData): ?array
+    public function create_bundle_product(array $product_data): ?array
     {
-        $productData['type'] = 'bundle';
-        return $this->createProduct($productData);
+        $product_data['type'] = 'bundle';
+        return $this->create_product($product_data);
     }
 
     /**
@@ -371,11 +376,11 @@ class WooCommerceClient
      * @param array $childProductIds Array of child product IDs
      * @return array|null
      */
-    public function createGroupedProduct(array $productData, array $childProductIds = []): ?array
+    public function create_grouped_product(array $product_data, array $child_product_ids = []): ?array
     {
-        $productData['type'] = 'grouped';
-        $productData['grouped_products'] = $childProductIds;
-        return $this->createProduct($productData);
+        $product_data['type'] = 'grouped';
+        $product_data['grouped_products'] = $child_product_ids;
+        return $this->create_product($product_data);
     }
 
     /**
@@ -385,10 +390,10 @@ class WooCommerceClient
      * @param array $childProductIds Array of child product IDs to add
      * @return array|null
      */
-    public function addToGroupedProduct(int $groupedProductId, array $childProductIds): ?array
+    public function add_to_grouped_product(int $grouped_product_id, array $child_product_ids): ?array
     {
-        return $this->updateProduct($groupedProductId, [
-            'grouped_products' => $childProductIds,
+        return $this->update_product($grouped_product_id, [
+            'grouped_products' => $child_product_ids,
         ]);
     }
 
@@ -398,9 +403,9 @@ class WooCommerceClient
      * @param array $components Array of ['product_id' => id, 'quantity' => qty, ...]
      * @return array Formatted bundled_items for API
      */
-    public function buildBundledItems(array $components): array
+    public function build_bundled_items(array $components): array
     {
-        $bundledItems = [];
+        $bundled_items = [];
 
         foreach ($components as $component) {
             $item = [
@@ -423,10 +428,10 @@ class WooCommerceClient
                 $item['title'] = $component['title'];
             }
 
-            $bundledItems[] = $item;
+            $bundled_items[] = $item;
         }
 
-        return $bundledItems;
+        return $bundled_items;
     }
 
     /**
@@ -438,9 +443,9 @@ class WooCommerceClient
      *
      * @return string 'bundle', 'grouped', or 'simple'
      */
-    public function getBundleStrategy(): string
+    public function get_bundle_strategy(): string
     {
-        if ($this->hasBundleSupport()) {
+        if ($this->has_bundle_support()) {
             return 'bundle';
         }
         return 'grouped';
@@ -455,7 +460,7 @@ class WooCommerceClient
      *
      * @return bool
      */
-    public function testConnection(): bool
+    public function test_connection(): bool
     {
         // Try to get system status
         $result = $this->request('GET', 'system_status');
@@ -467,7 +472,7 @@ class WooCommerceClient
      *
      * @return array|null
      */
-    public function getSystemStatus(): ?array
+    public function get_system_status(): ?array
     {
         return $this->request('GET', 'system_status');
     }
@@ -489,9 +494,9 @@ class WooCommerceClient
         string $method,
         string $endpoint,
         ?array $body = null,
-        array $queryParams = []
+        array $query_params = []
     ): ?array {
-        $url = $this->buildUrl($endpoint, $queryParams);
+        $url = $this->build_url($endpoint, $query_params);
 
         if ($this->debug) {
             echo "[DEBUG] {$method} {$url}\n";
@@ -511,7 +516,7 @@ class WooCommerceClient
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_USERPWD => $this->consumerKey . ':' . $this->consumerSecret,
+            CURLOPT_USERPWD => $this->consumer_key . ':' . $this->consumer_secret,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_TIMEOUT => 60,
         ]);
@@ -535,7 +540,7 @@ class WooCommerceClient
         }
 
         $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
 
         curl_close($ch);
@@ -547,9 +552,9 @@ class WooCommerceClient
             return null;
         }
 
-        if ($httpCode < 200 || $httpCode >= 300) {
+        if ($http_code < 200 || $http_code >= 300) {
             if ($this->debug) {
-                echo "[ERROR] HTTP {$httpCode}: {$response}\n";
+                echo "[ERROR] HTTP {$http_code}: {$response}\n";
             }
             return null;
         }
@@ -573,12 +578,12 @@ class WooCommerceClient
      * @param array $queryParams
      * @return string
      */
-    private function buildUrl(string $endpoint, array $queryParams = []): string
+    private function build_url(string $endpoint, array $query_params = []): string
     {
-        $url = "{$this->siteUrl}/wp-json/{$this->apiVersion}/" . ltrim($endpoint, '/');
+        $url = "{$this->site_url}/wp-json/{$this->api_version}/" . ltrim($endpoint, '/');
 
-        if (!empty($queryParams)) {
-            $url .= '?' . http_build_query($queryParams);
+        if (!empty($query_params)) {
+            $url .= '?' . http_build_query($query_params);
         }
 
         return $url;
@@ -589,10 +594,10 @@ class WooCommerceClient
      *
      * @return string|null
      */
-    public function getLastError(): ?string
+    public function get_last_error(): ?string
     {
-        return $this->lastError ?? null;
+        return $this->last_error ?? null;
     }
 
-    private ?string $lastError = null;
+    private ?string $last_error = null;
 }

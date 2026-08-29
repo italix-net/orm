@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * WooCommerce Product Exporter
  *
@@ -56,33 +61,33 @@ class ExportProducts
     private Schema $schema;
     private array $config;
     private bool $debug;
-    private bool $dryRun;
-    private bool $updateExisting;
+    private bool $dry_run;
+    private bool $update_existing;
 
     // Statistics
-    private int $productsExported = 0;
-    private int $productsUpdated = 0;
-    private int $productsSkipped = 0;
-    private int $variationsCreated = 0;
-    private int $bundlesExported = 0;
+    private int $products_exported = 0;
+    private int $products_updated = 0;
+    private int $products_skipped = 0;
+    private int $variations_created = 0;
+    private int $bundles_exported = 0;
     private int $errors = 0;
 
     // Bundle export strategy: 'bundle' (plugin), 'grouped' (native), or 'simple'
-    private string $bundleStrategy = 'grouped';
+    private string $bundle_strategy = 'grouped';
 
     // Cache for WooCommerce data
-    private array $attributeCache = [];
-    private array $categoryCache = [];
+    private array $attribute_cache = [];
+    private array $category_cache = [];
 
     // Cache for exported products (needed for bundle component references)
-    private array $exportedProductsCache = [];
+    private array $exported_products_cache = [];
 
     public function __construct(array $config)
     {
         $this->config = $config;
         $this->debug = $config['debug'] ?? false;
-        $this->dryRun = $config['dry_run'] ?? false;
-        $this->updateExisting = $config['update_existing'] ?? false;
+        $this->dry_run = $config['dry_run'] ?? false;
+        $this->update_existing = $config['update_existing'] ?? false;
 
         // Initialize WooCommerce client
         $this->client = new WooCommerceClient(
@@ -94,21 +99,21 @@ class ExportProducts
         );
 
         // Initialize local database
-        $this->initDatabase();
+        $this->init_database();
     }
 
     /**
      * Initialize local database connection
      */
-    private function initDatabase(): void
+    private function init_database(): void
     {
-        $dbType = $this->config['db_type'] ?? 'sqlite';
+        $db_type = $this->config['db_type'] ?? 'sqlite';
 
-        if ($dbType === 'sqlite') {
-            $dbPath = $this->config['db_sqlite_path'] ?? __DIR__ . '/../ecommerce.db';
-            $driver = Driver::sqlite($dbPath);
+        if ($db_type === 'sqlite') {
+            $db_path = $this->config['db_sqlite_path'] ?? __DIR__ . '/../ecommerce.db';
+            $driver = Driver::sqlite($db_path);
         } else {
-            throw new \RuntimeException("Unsupported database type: {$dbType}");
+            throw new \RuntimeException("Unsupported database type: {$db_type}");
         }
 
         $this->dm = new DataManager($driver);
@@ -135,14 +140,14 @@ class ExportProducts
         $this->log("WooCommerce Product Exporter");
         $this->log(str_repeat('=', 50));
 
-        if ($this->dryRun) {
+        if ($this->dry_run) {
             $this->log("DRY RUN MODE - No changes will be made\n");
         }
 
         // Test connection
-        if (!$this->dryRun) {
+        if (!$this->dry_run) {
             $this->log("Testing WooCommerce connection...");
-            if (!$this->client->testConnection()) {
+            if (!$this->client->test_connection()) {
                 $this->error("Failed to connect to WooCommerce API");
                 return;
             }
@@ -150,38 +155,38 @@ class ExportProducts
         }
 
         // Pre-load WooCommerce attributes and categories
-        if (!$this->dryRun) {
-            $this->loadWooCommerceData();
-            $this->detectBundleSupport();
+        if (!$this->dry_run) {
+            $this->load_woo_commerce_data();
+            $this->detect_bundle_support();
         }
 
         // Get products to export
-        $products = $this->getProductsToExport($options);
+        $products = $this->get_products_to_export($options);
         $this->log("Found " . count($products) . " products to export\n");
 
         foreach ($products as $thing) {
-            $this->exportProduct($thing);
+            $this->export_product($thing);
         }
 
-        $this->printSummary();
+        $this->print_summary();
     }
 
     /**
      * Load WooCommerce attributes and categories into cache
      */
-    private function loadWooCommerceData(): void
+    private function load_woo_commerce_data(): void
     {
         $this->log("Loading WooCommerce attributes...");
-        $attributes = $this->client->getAttributes();
+        $attributes = $this->client->get_attributes();
         foreach ($attributes as $attr) {
-            $this->attributeCache[$attr['slug']] = $attr;
+            $this->attribute_cache[$attr['slug']] = $attr;
         }
         $this->log("  Loaded " . count($attributes) . " attributes");
 
         $this->log("Loading WooCommerce categories...");
-        $categories = $this->client->getCategories(['per_page' => 100]);
+        $categories = $this->client->get_categories(['per_page' => 100]);
         foreach ($categories as $cat) {
-            $this->categoryCache[$cat['slug']] = $cat;
+            $this->category_cache[$cat['slug']] = $cat;
         }
         $this->log("  Loaded " . count($categories) . " categories\n");
     }
@@ -189,12 +194,12 @@ class ExportProducts
     /**
      * Detect WooCommerce bundle plugin support
      */
-    private function detectBundleSupport(): void
+    private function detect_bundle_support(): void
     {
         $this->log("Checking bundle support...");
-        $this->bundleStrategy = $this->client->getBundleStrategy();
+        $this->bundle_strategy = $this->client->get_bundle_strategy();
 
-        if ($this->bundleStrategy === 'bundle') {
+        if ($this->bundle_strategy === 'bundle') {
             $this->log("  WooCommerce Product Bundles plugin detected!");
             $this->log("  Bundles will be exported as 'bundle' type products.\n");
         } else {
@@ -209,12 +214,12 @@ class ExportProducts
      * @param array $options
      * @return array<Thing>
      */
-    private function getProductsToExport(array $options): array
+    private function get_products_to_export(array $options): array
     {
-        $allProducts = Thing::find_products();
+        $all_products = Thing::find_products();
 
         // Filter out variants (they're exported with their parent)
-        $products = array_filter($allProducts, function ($thing) {
+        $products = array_filter($all_products, function ($thing) {
             $delegate = $thing->delegate();
             return !$delegate->is_variant();
         });
@@ -240,7 +245,7 @@ class ExportProducts
      *
      * @param Thing $thing
      */
-    private function exportProduct(Thing $thing): void
+    private function export_product(Thing $thing): void
     {
         $delegate = $thing->delegate();
         $sku = $delegate['sku'] ?? '';
@@ -249,14 +254,14 @@ class ExportProducts
         $this->log("Exporting: {$name} (SKU: {$sku})");
 
         // Check if product already exists
-        if (!$this->dryRun && $sku) {
-            $existing = $this->client->findProductBySku($sku);
+        if (!$this->dry_run && $sku) {
+            $existing = $this->client->find_product_by_sku($sku);
             if ($existing) {
-                if ($this->updateExisting) {
-                    $this->updateExistingProduct($thing, $existing);
+                if ($this->update_existing) {
+                    $this->update_existing_product($thing, $existing);
                 } else {
                     $this->log("  Skipped (already exists, use --update to update)");
-                    $this->productsSkipped++;
+                    $this->products_skipped++;
                 }
                 return;
             }
@@ -264,11 +269,11 @@ class ExportProducts
 
         // Determine product type and build data
         if ($delegate->is_bundle()) {
-            $this->exportBundleProduct($thing);
+            $this->export_bundle_product($thing);
         } elseif ($delegate->is_group()) {
-            $this->exportVariableProduct($thing);
+            $this->export_variable_product($thing);
         } else {
-            $this->exportSimpleProduct($thing);
+            $this->export_simple_product($thing);
         }
     }
 
@@ -277,10 +282,10 @@ class ExportProducts
      *
      * @param Thing $thing
      */
-    private function exportSimpleProduct(Thing $thing): void
+    private function export_simple_product(Thing $thing): void
     {
         $delegate = $thing->delegate();
-        $data = $this->buildProductData($thing);
+        $data = $this->build_product_data($thing);
 
         // Set type based on product characteristics
         $data['type'] = 'simple';
@@ -293,45 +298,45 @@ class ExportProducts
                 $data['downloadable'] = true;
 
                 // Add download info if available
-                $downloadUrl = $delegate->download_url();
-                if ($downloadUrl) {
+                $download_url = $delegate->download_url();
+                if ($download_url) {
                     $data['downloads'] = [
                         [
                             'name' => $thing['name'],
-                            'file' => $downloadUrl,
+                            'file' => $download_url,
                         ]
                     ];
                 }
 
-                $downloadLimit = $delegate->download_limit();
-                if ($downloadLimit !== null) {
-                    $data['download_limit'] = $downloadLimit;
+                $download_limit = $delegate->download_limit();
+                if ($download_limit !== null) {
+                    $data['download_limit'] = $download_limit;
                 }
 
-                $downloadExpiry = $delegate->download_expiry_days();
-                if ($downloadExpiry !== null) {
-                    $data['download_expiry'] = $downloadExpiry;
+                $download_expiry = $delegate->download_expiry_days();
+                if ($download_expiry !== null) {
+                    $data['download_expiry'] = $download_expiry;
                 }
             }
         }
 
-        if ($this->dryRun) {
+        if ($this->dry_run) {
             $this->log("  [DRY RUN] Would create simple product");
             $this->log("  Type: " . ($delegate->is_virtual() ? ($delegate->is_downloadable() ? 'downloadable' : 'virtual') : 'physical'));
-            $this->productsExported++;
+            $this->products_exported++;
             return;
         }
 
-        $result = $this->client->createProduct($data);
+        $result = $this->client->create_product($data);
 
         if ($result) {
             $this->log("  Created product ID: {$result['id']}");
-            $this->productsExported++;
+            $this->products_exported++;
 
             // Cache the exported product for bundle references
             $sku = $delegate['sku'] ?? '';
             if ($sku) {
-                $this->exportedProductsCache[$sku] = $result['id'];
+                $this->exported_products_cache[$sku] = $result['id'];
             }
         } else {
             $this->error("  Failed to create product");
@@ -347,23 +352,23 @@ class ExportProducts
      *
      * @param Thing $thing
      */
-    private function exportBundleProduct(Thing $thing): void
+    private function export_bundle_product(Thing $thing): void
     {
         $delegate = $thing->delegate();
-        $bundleItems = $delegate->bundle_items();
-        $data = $this->buildProductData($thing);
+        $bundle_items = $delegate->bundle_items();
+        $data = $this->build_product_data($thing);
 
-        $this->log("  Bundle with " . count($bundleItems) . " components");
+        $this->log("  Bundle with " . count($bundle_items) . " components");
 
         // First, ensure all bundle component products are exported
-        $componentWcIds = $this->exportBundleComponents($bundleItems);
+        $component_wc_ids = $this->export_bundle_components($bundle_items);
 
-        if ($this->bundleStrategy === 'bundle') {
+        if ($this->bundle_strategy === 'bundle') {
             // Use WooCommerce Product Bundles plugin
-            $this->exportBundleWithPlugin($thing, $data, $bundleItems, $componentWcIds);
+            $this->export_bundle_with_plugin($thing, $data, $bundle_items, $component_wc_ids);
         } else {
             // Use native grouped products
-            $this->exportBundleAsGrouped($thing, $data, $componentWcIds);
+            $this->export_bundle_as_grouped($thing, $data, $component_wc_ids);
         }
     }
 
@@ -373,67 +378,67 @@ class ExportProducts
      * @param array $bundleItems Bundle item definitions
      * @return array Map of local product ID to WooCommerce product ID
      */
-    private function exportBundleComponents(array $bundleItems): array
+    private function export_bundle_components(array $bundle_items): array
     {
-        $wcIds = [];
+        $wc_ids = [];
 
-        foreach ($bundleItems as $item) {
-            $productId = $item['product_id'] ?? $item['prestashop_id'] ?? null;
-            if (!$productId) {
+        foreach ($bundle_items as $item) {
+            $product_id = $item['product_id'] ?? $item['prestashop_id'] ?? null;
+            if (!$product_id) {
                 continue;
             }
 
             // Find the local product
-            $componentThing = Thing::find_with_delegate($productId);
-            if (!$componentThing) {
-                $this->log("    Warning: Bundle component product ID {$productId} not found locally");
+            $component_thing = Thing::find_with_delegate($product_id);
+            if (!$component_thing) {
+                $this->log("    Warning: Bundle component product ID {$product_id} not found locally");
                 continue;
             }
 
-            $componentDelegate = $componentThing->delegate();
-            $componentSku = $componentDelegate['sku'] ?? '';
+            $component_delegate = $component_thing->delegate();
+            $component_sku = $component_delegate['sku'] ?? '';
 
             // Check if already exported in this session
-            if (isset($this->exportedProductsCache[$componentSku])) {
-                $wcIds[$productId] = $this->exportedProductsCache[$componentSku];
+            if (isset($this->exported_products_cache[$component_sku])) {
+                $wc_ids[$product_id] = $this->exported_products_cache[$component_sku];
                 continue;
             }
 
             // Check if exists in WooCommerce
-            if (!$this->dryRun && $componentSku) {
-                $existing = $this->client->findProductBySku($componentSku);
+            if (!$this->dry_run && $component_sku) {
+                $existing = $this->client->find_product_by_sku($component_sku);
                 if ($existing) {
-                    $wcIds[$productId] = $existing['id'];
-                    $this->exportedProductsCache[$componentSku] = $existing['id'];
-                    $this->log("    Component exists: {$componentThing['name']} (WC ID: {$existing['id']})");
+                    $wc_ids[$product_id] = $existing['id'];
+                    $this->exported_products_cache[$component_sku] = $existing['id'];
+                    $this->log("    Component exists: {$component_thing['name']} (WC ID: {$existing['id']})");
                     continue;
                 }
             }
 
             // Export the component product
-            $this->log("    Exporting component: {$componentThing['name']}");
-            if ($componentDelegate->is_variant()) {
+            $this->log("    Exporting component: {$component_thing['name']}");
+            if ($component_delegate->is_variant()) {
                 // Skip variants - they should be exported with their parent
                 $this->log("      Skipping variant (export parent instead)");
                 continue;
             }
 
             // Export based on type
-            if ($componentDelegate->is_bundle()) {
-                $this->exportBundleProduct($componentThing);
-            } elseif ($componentDelegate->is_group()) {
-                $this->exportVariableProduct($componentThing);
+            if ($component_delegate->is_bundle()) {
+                $this->export_bundle_product($component_thing);
+            } elseif ($component_delegate->is_group()) {
+                $this->export_variable_product($component_thing);
             } else {
-                $this->exportSimpleProduct($componentThing);
+                $this->export_simple_product($component_thing);
             }
 
             // Get the WC ID from cache
-            if (isset($this->exportedProductsCache[$componentSku])) {
-                $wcIds[$productId] = $this->exportedProductsCache[$componentSku];
+            if (isset($this->exported_products_cache[$component_sku])) {
+                $wc_ids[$product_id] = $this->exported_products_cache[$component_sku];
             }
         }
 
-        return $wcIds;
+        return $wc_ids;
     }
 
     /**
@@ -444,25 +449,25 @@ class ExportProducts
      * @param array $bundleItems Local bundle items
      * @param array $componentWcIds Map of local ID to WC ID
      */
-    private function exportBundleWithPlugin(Thing $thing, array $data, array $bundleItems, array $componentWcIds): void
+    private function export_bundle_with_plugin(Thing $thing, array $data, array $bundle_items, array $component_wc_ids): void
     {
         $delegate = $thing->delegate();
 
         $data['type'] = 'bundle';
 
         // Build bundled_items for the plugin
-        $bundledItems = [];
-        foreach ($bundleItems as $item) {
-            $localId = $item['product_id'] ?? $item['prestashop_id'] ?? null;
-            $wcId = $componentWcIds[$localId] ?? null;
+        $bundled_items = [];
+        foreach ($bundle_items as $item) {
+            $local_id = $item['product_id'] ?? $item['prestashop_id'] ?? null;
+            $wc_id = $component_wc_ids[$local_id] ?? null;
 
-            if (!$wcId) {
-                $this->log("    Warning: Skipping component - no WC ID for local ID {$localId}");
+            if (!$wc_id) {
+                $this->log("    Warning: Skipping component - no WC ID for local ID {$local_id}");
                 continue;
             }
 
-            $bundledItems[] = [
-                'product_id' => $wcId,
+            $bundled_items[] = [
+                'product_id' => $wc_id,
                 'quantity_min' => $item['quantity'] ?? 1,
                 'quantity_max' => $item['quantity'] ?? 1,
                 'quantity_default' => $item['quantity'] ?? 1,
@@ -472,23 +477,23 @@ class ExportProducts
             ];
         }
 
-        $data['bundled_items'] = $bundledItems;
+        $data['bundled_items'] = $bundled_items;
 
-        if ($this->dryRun) {
-            $this->log("  [DRY RUN] Would create bundle product with " . count($bundledItems) . " items");
-            $this->bundlesExported++;
+        if ($this->dry_run) {
+            $this->log("  [DRY RUN] Would create bundle product with " . count($bundled_items) . " items");
+            $this->bundles_exported++;
             return;
         }
 
-        $result = $this->client->createBundleProduct($data);
+        $result = $this->client->create_bundle_product($data);
 
         if ($result) {
             $this->log("  Created bundle product ID: {$result['id']}");
-            $this->bundlesExported++;
+            $this->bundles_exported++;
 
             $sku = $delegate['sku'] ?? '';
             if ($sku) {
-                $this->exportedProductsCache[$sku] = $result['id'];
+                $this->exported_products_cache[$sku] = $result['id'];
             }
         } else {
             $this->error("  Failed to create bundle product");
@@ -503,49 +508,49 @@ class ExportProducts
      * @param array $data Base product data
      * @param array $componentWcIds Map of local ID to WC ID
      */
-    private function exportBundleAsGrouped(Thing $thing, array $data, array $componentWcIds): void
+    private function export_bundle_as_grouped(Thing $thing, array $data, array $component_wc_ids): void
     {
         $delegate = $thing->delegate();
 
         // Note: Grouped products don't have their own price - each component is sold separately
         // We'll set the price to 0 and add a note in the description
-        $bundlePrice = $delegate->price();
-        $bundleValue = $delegate->bundle_value();
+        $bundle_price = $delegate->price();
+        $bundle_value = $delegate->bundle_value();
         $savings = $delegate->bundle_savings();
 
         // Update description to explain the grouped product
-        $groupedNote = "\n\n<strong>This is a product bundle.</strong> Purchase all items together.";
+        $grouped_note = "\n\n<strong>This is a product bundle.</strong> Purchase all items together.";
         if ($savings > 0) {
-            $groupedNote .= sprintf(" Bundle value: %s (Save %s!)",
+            $grouped_note .= sprintf(" Bundle value: %s (Save %s!)",
                 $delegate->formatted_price(),
                 number_format($savings, 2)
             );
         }
-        $data['description'] = ($data['description'] ?? '') . $groupedNote;
+        $data['description'] = ($data['description'] ?? '') . $grouped_note;
 
         // For grouped products, we don't set a price (components have their own prices)
         unset($data['regular_price']);
 
         $data['type'] = 'grouped';
-        $data['grouped_products'] = array_values($componentWcIds);
+        $data['grouped_products'] = array_values($component_wc_ids);
 
-        if ($this->dryRun) {
-            $this->log("  [DRY RUN] Would create grouped product with " . count($componentWcIds) . " children");
+        if ($this->dry_run) {
+            $this->log("  [DRY RUN] Would create grouped product with " . count($component_wc_ids) . " children");
             $this->log("  Note: Grouped products - components sold separately (no bundle pricing)");
-            $this->bundlesExported++;
+            $this->bundles_exported++;
             return;
         }
 
-        $result = $this->client->createGroupedProduct($data, array_values($componentWcIds));
+        $result = $this->client->create_grouped_product($data, array_values($component_wc_ids));
 
         if ($result) {
             $this->log("  Created grouped product ID: {$result['id']}");
             $this->log("  Note: Using grouped product (install WooCommerce Product Bundles for true bundle support)");
-            $this->bundlesExported++;
+            $this->bundles_exported++;
 
             $sku = $delegate['sku'] ?? '';
             if ($sku) {
-                $this->exportedProductsCache[$sku] = $result['id'];
+                $this->exported_products_cache[$sku] = $result['id'];
             }
         } else {
             $this->error("  Failed to create grouped product");
@@ -558,10 +563,10 @@ class ExportProducts
      *
      * @param Thing $thing
      */
-    private function exportVariableProduct(Thing $thing): void
+    private function export_variable_product(Thing $thing): void
     {
         $delegate = $thing->delegate();
-        $data = $this->buildProductData($thing);
+        $data = $this->build_product_data($thing);
         $data['type'] = 'variable';
 
         // Get variants
@@ -571,16 +576,16 @@ class ExportProducts
             $this->log("  Warning: ProductGroup has no variants, exporting as simple");
             $data['type'] = 'simple';
 
-            if ($this->dryRun) {
+            if ($this->dry_run) {
                 $this->log("  [DRY RUN] Would create simple product (no variants)");
-                $this->productsExported++;
+                $this->products_exported++;
                 return;
             }
 
-            $result = $this->client->createProduct($data);
+            $result = $this->client->create_product($data);
             if ($result) {
                 $this->log("  Created product ID: {$result['id']}");
-                $this->productsExported++;
+                $this->products_exported++;
             } else {
                 $this->error("  Failed to create product");
                 $this->errors++;
@@ -589,21 +594,21 @@ class ExportProducts
         }
 
         // Collect all attribute options from variants
-        $attributeOptions = $this->collectVariantAttributes($variants);
+        $attribute_options = $this->collect_variant_attributes($variants);
 
         // Build attributes for the parent product
-        $data['attributes'] = $this->buildWooCommerceAttributes($attributeOptions);
+        $data['attributes'] = $this->build_woo_commerce_attributes($attribute_options);
 
-        if ($this->dryRun) {
+        if ($this->dry_run) {
             $this->log("  [DRY RUN] Would create variable product with " . count($variants) . " variations");
-            $this->log("  Attributes: " . implode(', ', array_keys($attributeOptions)));
-            $this->productsExported++;
-            $this->variationsCreated += count($variants);
+            $this->log("  Attributes: " . implode(', ', array_keys($attribute_options)));
+            $this->products_exported++;
+            $this->variations_created += count($variants);
             return;
         }
 
         // Create parent product
-        $result = $this->client->createProduct($data);
+        $result = $this->client->create_product($data);
 
         if (!$result) {
             $this->error("  Failed to create variable product");
@@ -611,19 +616,19 @@ class ExportProducts
             return;
         }
 
-        $parentId = $result['id'];
-        $this->log("  Created variable product ID: {$parentId}");
-        $this->productsExported++;
+        $parent_id = $result['id'];
+        $this->log("  Created variable product ID: {$parent_id}");
+        $this->products_exported++;
 
         // Cache the exported product for bundle references
         $sku = $delegate['sku'] ?? '';
         if ($sku) {
-            $this->exportedProductsCache[$sku] = $parentId;
+            $this->exported_products_cache[$sku] = $parent_id;
         }
 
         // Create variations
         foreach ($variants as $variant) {
-            $this->createVariation($parentId, $variant);
+            $this->create_variation($parent_id, $variant);
         }
     }
 
@@ -633,11 +638,11 @@ class ExportProducts
      * @param int $parentId WooCommerce parent product ID
      * @param Thing $variant Variant Thing
      */
-    private function createVariation(int $parentId, Thing $variant): void
+    private function create_variation(int $parent_id, Thing $variant): void
     {
         $delegate = $variant->delegate();
 
-        $variationData = [
+        $variation_data = [
             'sku' => $delegate['sku'] ?? '',
             'regular_price' => (string) ($delegate['price'] ?? '0'),
             'description' => $variant['description'] ?? '',
@@ -648,10 +653,10 @@ class ExportProducts
 
         // Add variation attributes
         $attrs = $delegate->all_variant_attributes();
-        $variationData['attributes'] = [];
+        $variation_data['attributes'] = [];
 
         foreach ($attrs as $name => $value) {
-            $variationData['attributes'][] = [
+            $variation_data['attributes'][] = [
                 'name' => ucfirst($name),
                 'option' => $value,
             ];
@@ -659,23 +664,23 @@ class ExportProducts
 
         // Handle virtual variants
         if ($delegate->is_virtual()) {
-            $variationData['virtual'] = true;
+            $variation_data['virtual'] = true;
             if ($delegate->is_downloadable()) {
-                $variationData['downloadable'] = true;
+                $variation_data['downloadable'] = true;
             }
         }
 
         // Add weight if available
         $weight = $delegate['weight'] ?? null;
         if ($weight !== null) {
-            $variationData['weight'] = (string) $weight;
+            $variation_data['weight'] = (string) $weight;
         }
 
-        $result = $this->client->createVariation($parentId, $variationData);
+        $result = $this->client->create_variation($parent_id, $variation_data);
 
         if ($result) {
             $this->log("    Created variation: {$delegate['sku']} (ID: {$result['id']})");
-            $this->variationsCreated++;
+            $this->variations_created++;
         } else {
             $this->error("    Failed to create variation: {$delegate['sku']}");
             $this->errors++;
@@ -688,29 +693,29 @@ class ExportProducts
      * @param Thing $thing Local product
      * @param array $existing Existing WooCommerce product
      */
-    private function updateExistingProduct(Thing $thing, array $existing): void
+    private function update_existing_product(Thing $thing, array $existing): void
     {
         $delegate = $thing->delegate();
-        $data = $this->buildProductData($thing);
+        $data = $this->build_product_data($thing);
 
         // Don't change the product type
         unset($data['type']);
 
-        if ($this->dryRun) {
+        if ($this->dry_run) {
             $this->log("  [DRY RUN] Would update product ID: {$existing['id']}");
-            $this->productsUpdated++;
+            $this->products_updated++;
             return;
         }
 
-        $result = $this->client->updateProduct($existing['id'], $data);
+        $result = $this->client->update_product($existing['id'], $data);
 
         if ($result) {
             $this->log("  Updated product ID: {$existing['id']}");
-            $this->productsUpdated++;
+            $this->products_updated++;
 
             // Update variations if variable product
             if ($existing['type'] === 'variable' && $delegate->is_group()) {
-                $this->updateVariations($existing['id'], $delegate->variants());
+                $this->update_variations($existing['id'], $delegate->variants());
             }
         } else {
             $this->error("  Failed to update product");
@@ -724,14 +729,14 @@ class ExportProducts
      * @param int $parentId WooCommerce parent product ID
      * @param array $variants Local variants
      */
-    private function updateVariations(int $parentId, array $variants): void
+    private function update_variations(int $parent_id, array $variants): void
     {
         // Get existing variations
-        $existingVariations = $this->client->getVariations($parentId);
-        $existingBySku = [];
-        foreach ($existingVariations as $v) {
+        $existing_variations = $this->client->get_variations($parent_id);
+        $existing_by_sku = [];
+        foreach ($existing_variations as $v) {
             if (!empty($v['sku'])) {
-                $existingBySku[$v['sku']] = $v;
+                $existing_by_sku[$v['sku']] = $v;
             }
         }
 
@@ -739,19 +744,19 @@ class ExportProducts
             $delegate = $variant->delegate();
             $sku = $delegate['sku'] ?? '';
 
-            if (isset($existingBySku[$sku])) {
+            if (isset($existing_by_sku[$sku])) {
                 // Update existing variation
-                $variationData = [
+                $variation_data = [
                     'regular_price' => (string) ($delegate['price'] ?? '0'),
                     'stock_quantity' => (int) ($delegate['inventory_level'] ?? 0),
                     'stock_status' => $delegate->is_in_stock() ? 'instock' : 'outofstock',
                 ];
 
-                $this->client->updateVariation($parentId, $existingBySku[$sku]['id'], $variationData);
+                $this->client->update_variation($parent_id, $existing_by_sku[$sku]['id'], $variation_data);
                 $this->log("    Updated variation: {$sku}");
             } else {
                 // Create new variation
-                $this->createVariation($parentId, $variant);
+                $this->create_variation($parent_id, $variant);
             }
         }
     }
@@ -762,14 +767,14 @@ class ExportProducts
      * @param Thing $thing
      * @return array
      */
-    private function buildProductData(Thing $thing): array
+    private function build_product_data(Thing $thing): array
     {
         $delegate = $thing->delegate();
 
         $data = [
             'name' => $thing['name'],
             'description' => $thing['description'] ?? '',
-            'short_description' => $this->buildShortDescription($thing),
+            'short_description' => $this->build_short_description($thing),
             'sku' => $delegate['sku'] ?? '',
             'regular_price' => (string) ($delegate['price'] ?? '0'),
             'manage_stock' => true,
@@ -778,19 +783,19 @@ class ExportProducts
         ];
 
         // Add images if URL is available
-        $imageUrl = $thing['image'] ?? null;
-        if ($imageUrl) {
+        $image_url = $thing['image'] ?? null;
+        if ($image_url) {
             $data['images'] = [
-                ['src' => $imageUrl]
+                ['src' => $image_url]
             ];
         }
 
         // Add category if available
         $category = $delegate['category'] ?? null;
         if ($category) {
-            $categoryId = $this->getOrCreateCategory($category);
-            if ($categoryId) {
-                $data['categories'] = [['id' => $categoryId]];
+            $category_id = $this->get_or_create_category($category);
+            if ($category_id) {
+                $data['categories'] = [['id' => $category_id]];
             }
         }
 
@@ -831,7 +836,7 @@ class ExportProducts
      * @param Thing $thing
      * @return string
      */
-    private function buildShortDescription(Thing $thing): string
+    private function build_short_description(Thing $thing): string
     {
         $delegate = $thing->delegate();
 
@@ -860,7 +865,7 @@ class ExportProducts
      * @param array $variants
      * @return array ['color' => ['Red', 'Blue'], 'size' => ['S', 'M', 'L']]
      */
-    private function collectVariantAttributes(array $variants): array
+    private function collect_variant_attributes(array $variants): array
     {
         $attributes = [];
 
@@ -887,12 +892,12 @@ class ExportProducts
      * @param array $attributeOptions ['color' => ['Red', 'Blue'], ...]
      * @return array
      */
-    private function buildWooCommerceAttributes(array $attributeOptions): array
+    private function build_woo_commerce_attributes(array $attribute_options): array
     {
         $attributes = [];
         $position = 0;
 
-        foreach ($attributeOptions as $name => $options) {
+        foreach ($attribute_options as $name => $options) {
             $attributes[] = [
                 'name' => ucfirst($name),
                 'position' => $position++,
@@ -911,34 +916,34 @@ class ExportProducts
      * @param string $categoryName
      * @return int|null Category ID
      */
-    private function getOrCreateCategory(string $categoryName): ?int
+    private function get_or_create_category(string $category_name): ?int
     {
-        $slug = $this->slugify($categoryName);
+        $slug = $this->slugify($category_name);
 
         // Check cache
-        if (isset($this->categoryCache[$slug])) {
-            return $this->categoryCache[$slug]['id'];
+        if (isset($this->category_cache[$slug])) {
+            return $this->category_cache[$slug]['id'];
         }
 
-        if ($this->dryRun) {
+        if ($this->dry_run) {
             return null;
         }
 
         // Try to find by slug
-        $existing = $this->client->findCategoryBySlug($slug);
+        $existing = $this->client->find_category_by_slug($slug);
         if ($existing) {
-            $this->categoryCache[$slug] = $existing;
+            $this->category_cache[$slug] = $existing;
             return $existing['id'];
         }
 
         // Create new category
-        $result = $this->client->createCategory([
-            'name' => $categoryName,
+        $result = $this->client->create_category([
+            'name' => $category_name,
             'slug' => $slug,
         ]);
 
         if ($result) {
-            $this->categoryCache[$slug] = $result;
+            $this->category_cache[$slug] = $result;
             return $result['id'];
         }
 
@@ -961,26 +966,26 @@ class ExportProducts
     /**
      * Print export summary
      */
-    private function printSummary(): void
+    private function print_summary(): void
     {
         $this->log("\n" . str_repeat('=', 50));
         $this->log("EXPORT SUMMARY");
         $this->log(str_repeat('=', 50));
-        $this->log("Products created:   {$this->productsExported}");
-        $this->log("Products updated:   {$this->productsUpdated}");
-        $this->log("Products skipped:   {$this->productsSkipped}");
-        $this->log("Variations created: {$this->variationsCreated}");
-        $this->log("Bundles exported:   {$this->bundlesExported}");
+        $this->log("Products created:   {$this->products_exported}");
+        $this->log("Products updated:   {$this->products_updated}");
+        $this->log("Products skipped:   {$this->products_skipped}");
+        $this->log("Variations created: {$this->variations_created}");
+        $this->log("Bundles exported:   {$this->bundles_exported}");
         $this->log("Errors:             {$this->errors}");
 
-        if ($this->bundlesExported > 0) {
-            $this->log("\nBundle strategy: {$this->bundleStrategy}");
-            if ($this->bundleStrategy === 'grouped') {
+        if ($this->bundles_exported > 0) {
+            $this->log("\nBundle strategy: {$this->bundle_strategy}");
+            if ($this->bundle_strategy === 'grouped') {
                 $this->log("  Note: Install WooCommerce Product Bundles plugin for true bundle support.");
             }
         }
 
-        if ($this->dryRun) {
+        if ($this->dry_run) {
             $this->log("\n(DRY RUN - no actual changes were made)");
         }
     }
@@ -1035,14 +1040,14 @@ if (php_sapi_name() === 'cli' && basename(__FILE__) === basename($_SERVER['SCRIP
     }
 
     // Load configuration
-    $configFile = __DIR__ . '/config.php';
-    if (!file_exists($configFile)) {
+    $config_file = __DIR__ . '/config.php';
+    if (!file_exists($config_file)) {
         echo "Error: Configuration file not found.\n";
         echo "Please copy config.example.php to config.php and configure your settings.\n";
         exit(1);
     }
 
-    $config = require $configFile;
+    $config = require $config_file;
 
     // Merge CLI options
     $config['debug'] = isset($options['debug']);

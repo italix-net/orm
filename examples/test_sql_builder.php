@@ -1,4 +1,9 @@
 <?php
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /**
  * Italix ORM - SQL Builder Test
  */
@@ -162,16 +167,16 @@ echo "✓ DELETE: {$affected} row(s) deleted\n\n";
 
 echo "--- Conditional SQL with when() ---\n";
 
-$minAge = 30;
-$maxSalary = null; // Not set
+$min_age = 30;
+$max_salary = null; // Not set
 
 $query = $dm->sql()
     ->append('SELECT * FROM users WHERE 1=1')
-    ->when($minAge !== null, ' AND age >= ?', [$minAge])
-    ->when($maxSalary !== null, ' AND salary <= ?', [$maxSalary]);
+    ->when($min_age !== null, ' AND age >= ?', [$min_age])
+    ->when($max_salary !== null, ' AND salary <= ?', [$max_salary]);
 
 $users = $query->all();
-echo "✓ Conditional query (minAge=$minAge): Found " . count($users) . " users\n\n";
+echo "✓ Conditional query (minAge=$min_age): Found " . count($users) . " users\n\n";
 
 // ============================================
 // Complex query building
@@ -180,18 +185,18 @@ echo "✓ Conditional query (minAge=$minAge): Found " . count($users) . " users\
 echo "--- Complex query building ---\n";
 
 // Build a complex query piece by piece
-$selectPart = sql('SELECT name, email, salary');
-$fromPart = sql(' FROM users');
-$wherePart = sql(' WHERE salary > ?', [50000]);
-$orderPart = sql(' ORDER BY salary DESC');
+$select_part = sql('SELECT name, email, salary');
+$from_part = sql(' FROM users');
+$where_part = sql(' WHERE salary > ?', [50000]);
+$order_part = sql(' ORDER BY salary DESC');
 
-$complexQuery = $dm->sql()
-    ->merge($selectPart)
-    ->merge($fromPart)
-    ->merge($wherePart)
-    ->merge($orderPart);
+$complex_query = $dm->sql()
+    ->merge($select_part)
+    ->merge($from_part)
+    ->merge($where_part)
+    ->merge($order_part);
 
-$results = $complexQuery->all();
+$results = $complex_query->all();
 echo "✓ Complex merged query: Found " . count($results) . " users with salary > 50k\n";
 foreach ($results as $row) {
     echo "    - {$row['name']}: \${$row['salary']}\n";
@@ -228,22 +233,22 @@ echo "Parameters: " . json_encode($query->get_params()) . "\n\n";
 echo "--- Static factory methods ---\n";
 
 // Using Sql::select()
-$selectSql = \Italix\Orm\Sql::select('*')
+$select_sql = \Italix\Orm\Sql::select('*')
     ->append(' FROM users WHERE id = ')
     ->value(1);
-echo "Sql::select(): " . $selectSql->get_query() . "\n";
+echo "Sql::select(): " . $select_sql->get_query() . "\n";
 
 // Using Sql::insert_into()
-$insertSql = \Italix\Orm\Sql::insert_into('users')
+$insert_sql = \Italix\Orm\Sql::insert_into('users')
     ->append(' (name, email) VALUES (')
     ->values(['Test', 'test@test.com'])
     ->append(')');
-echo "Sql::insert_into(): " . $insertSql->get_query() . "\n";
+echo "Sql::insert_into(): " . $insert_sql->get_query() . "\n";
 
 // Using Sql::param()
-$paramSql = sql('SELECT * FROM users WHERE id = ')
+$param_sql = sql('SELECT * FROM users WHERE id = ')
     ->merge(\Italix\Orm\Sql::param(42));
-echo "Sql::param(): " . $paramSql->get_query() . " with params " . json_encode($paramSql->get_params()) . "\n\n";
+echo "Sql::param(): " . $param_sql->get_query() . " with params " . json_encode($param_sql->get_params()) . "\n\n";
 
 // Final count
 $count = $dm->sql('SELECT COUNT(*) as total FROM users')->one();

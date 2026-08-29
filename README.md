@@ -574,8 +574,8 @@ knowing which is which is the whole value of the tool.
 ### `unsigned()`
 
 ```php
-'id'        => serial()->unsigned(),
-'agency_id' => integer()->unsigned()->not_null(),
+'id'          => serial()->unsigned(),
+'customer_id' => integer()->unsigned()->not_null(),
 ```
 
 Refuses negative values and doubles the positive range — the ordinary way to say "this is an

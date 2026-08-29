@@ -3,6 +3,13 @@
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning policy: `VERSIONING.md` at the
 project root.
 
+## [2.30.2] — 2026-08-30
+
+### Fixed
+
+- README's `unsigned()` example used `agency_id` — a column name lifted directly from the
+  application this library was extracted from, not a neutral example. Replaced with `customer_id`.
+
 ## [2.30.1] — 2026-08-28
 
 ### Changed

@@ -3,6 +3,37 @@
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning policy: `VERSIONING.md` at the
 project root.
 
+## [2.31.0] — 2026-09-23
+
+### Fixed
+
+- **`Blueprint::rename_column()` produced SQL that MariaDB 10.3 and MySQL 5.7 cannot parse.** It
+  emitted `ALTER TABLE … RENAME COLUMN … TO …`, which needs MySQL 8.0 or MariaDB 10.5.2. Below
+  those it is a syntax error naming the clause rather than the version, so the failure reads like a
+  broken migration rather than a broken ORM.
+
+  The give-away was already in the file: `if ($this->dialect === 'mysql')` with two identical
+  branches, under a comment reading *"MySQL requires column definition for CHANGE"*. The comment had
+  been right for as long as the code had ignored it.
+
+  Now `CHANGE COLUMN` with the column's **actual** definition — type, collation, nullability,
+  default, extra and comment — read from `SHOW FULL COLUMNS` rather than guessed. A guessed
+  definition compiles, runs, and quietly rewrites whichever part it got wrong, which is worse than
+  the syntax error it replaces. Non-MySQL dialects are untouched.
+
+  **An expression default (`CURRENT_TIMESTAMP` and the like) needs its own case**, caught only by
+  running this against a real server rather than trusting the first green run: quoting it as a
+  string — `DEFAULT 'CURRENT_TIMESTAMP'` — is accepted by neither engine (`Invalid default value`)
+  and, for the shapes that would be silently accepted, would have turned a live default into a dead
+  literal. MySQL and MariaDB don't even agree on how to report one back (`CURRENT_TIMESTAMP` vs
+  `current_timestamp()`, either with an optional fractional-seconds precision), confirmed against a
+  real MariaDB 10.3 server, not assumed from documentation.
+
+  `RenameColumnTest` covers it end to end against a live database: 11 assertions, most about the
+  definition — including an expression default — surviving rather than the name changing, the last
+  one inserting a row afterward to confirm the server actually stamps it rather than storing the
+  literal text. Skips cleanly without `IX_MY_*`.
+
 ## [2.30.2] — 2026-08-30
 
 ### Fixed

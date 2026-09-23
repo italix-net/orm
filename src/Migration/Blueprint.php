@@ -758,15 +758,32 @@ class Blueprint
         }
         
         // Rename columns
+        //
+        // `RENAME COLUMN` needs MySQL 8.0 or MariaDB 10.5.2. Below those it is
+        // a syntax error, and the error names the whole clause rather than the
+        // version — which is how this went unnoticed: both branches of the old
+        // `if ($this->dialect === 'mysql')` emitted the same statement, under a
+        // comment saying MySQL needs `CHANGE` with a definition.
+        //
+        // `CHANGE` works on every version, and needs the column's current
+        // definition, which is read from the server rather than guessed. A
+        // guess here would silently rewrite the type, the nullability or the
+        // default of a column somebody asked only to rename.
         foreach ($this->renames as $from => $to) {
             $from_name = $this->quote_identifier($from, $this->dialect);
             $to_name = $this->quote_identifier($to, $this->dialect);
-            if ($this->dialect === 'mysql') {
-                // MySQL requires column definition for CHANGE
+
+            if ($this->dialect !== 'mysql') {
                 $statements[] = "ALTER TABLE {$table_name} RENAME COLUMN {$from_name} TO {$to_name}";
-            } else {
-                $statements[] = "ALTER TABLE {$table_name} RENAME COLUMN {$from_name} TO {$to_name}";
+
+                continue;
             }
+
+            $definition = $this->mysql_column_definition($from);
+
+            $statements[] = $definition === null
+                ? "ALTER TABLE {$table_name} RENAME COLUMN {$from_name} TO {$to_name}"
+                : "ALTER TABLE {$table_name} CHANGE COLUMN {$from_name} {$to_name} {$definition}";
         }
         
         // Add columns
@@ -901,5 +918,107 @@ class Blueprint
     public function get_checks(): array
     {
         return $this->checks;
+    }
+
+    /**
+     * A column's definition as MySQL itself would write it.
+     *
+     * `SHOW FULL COLUMNS` rather than `information_schema`: it reports the
+     * collation and the extra clauses in the form `CHANGE` expects, and it
+     * needs no assumptions about the schema name.
+     *
+     * Returns null when the column cannot be read — a table that does not exist
+     * yet, or no connection — so the caller falls back to `RENAME COLUMN` and
+     * the server produces its own error rather than this method inventing one.
+     */
+    private function mysql_column_definition(string $column): ?string
+    {
+        try {
+            $pdo = Schema::get_connection()->get_connection();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        // No placeholder in the LIKE: `SHOW` does not take bound parameters,
+        // and interpolating one would be a second reason to regret it. Every
+        // column comes back and the match happens here.
+        $statement = $pdo->query('SHOW FULL COLUMNS FROM `' . str_replace('`', '', $this->table) . '`');
+
+        if ($statement === false) {
+            return null;
+        }
+
+        $row = null;
+
+        foreach ($statement->fetchAll(\PDO::FETCH_ASSOC) as $candidate) {
+            if (($candidate['Field'] ?? null) === $column) {
+                $row = $candidate;
+
+                break;
+            }
+        }
+
+        if ($row === null) {
+            return null;
+        }
+
+        $definition = (string) $row['Type'];
+
+        if (($row['Collation'] ?? null) !== null) {
+            $definition .= ' COLLATE ' . $row['Collation'];
+        }
+
+        $definition .= ($row['Null'] ?? 'YES') === 'NO' ? ' NOT NULL' : ' NULL';
+
+        // A default of null on a NOT NULL column means "no default", which is
+        // not the same as `DEFAULT NULL` and must not be written as one.
+        //
+        // An expression default (CURRENT_TIMESTAMP and the like) must not be
+        // quoted either — ColumnDefinition::format_default() already knows
+        // this for a default the *developer* writes; this reads one back from
+        // the server instead, where it can carry a fractional-seconds
+        // precision self::is_expression_default() also has to recognise.
+        if ($row['Default'] !== null) {
+            $default = (string) $row['Default'];
+            $definition .= ' DEFAULT ' . (self::is_expression_default($default) ? $default : $pdo->quote($default));
+        } elseif (($row['Null'] ?? 'YES') === 'YES') {
+            $definition .= ' DEFAULT NULL';
+        }
+
+        if (($row['Extra'] ?? '') !== '') {
+            $definition .= ' ' . $row['Extra'];
+        }
+
+        if (($row['Comment'] ?? '') !== '') {
+            $definition .= ' COMMENT ' . $pdo->quote((string) $row['Comment']);
+        }
+
+        return $definition;
+    }
+
+    /**
+     * True for a default read back from `SHOW FULL COLUMNS` that is a SQL
+     * expression rather than a literal — the same vocabulary
+     * `ColumnDefinition::format_default()` already treats specially for a
+     * developer-authored default, generalised for two things nobody has to
+     * think about when writing `->default('CURRENT_TIMESTAMP')`, only when
+     * reading one back from a live server:
+     *
+     *   - MySQL reports the bare keyword (`CURRENT_TIMESTAMP`); MariaDB
+     *     reports the same default as a call (`current_timestamp()`) —
+     *     confirmed against a real MariaDB 10.3 server, not assumed from
+     *     documentation.
+     *   - Either can carry a fractional-seconds precision (`…(3)`).
+     *
+     * A trailing `(...)` with nothing but digits (or nothing) inside is
+     * stripped before the comparison, so both servers' spellings collapse to
+     * the same keyword.
+     */
+    private static function is_expression_default(string $value): bool
+    {
+        $keywords = ['CURRENT_TIMESTAMP', 'NOW', 'CURRENT_DATE', 'CURRENT_TIME', 'UUID'];
+        $upper    = (string) preg_replace('/\(\d*\)$/', '', strtoupper($value));
+
+        return in_array($upper, $keywords, true);
     }
 }

@@ -2,7 +2,7 @@
     "name": "italix/orm",
     "description": "A lightweight, type-safe ORM for PHP with migrations, query builder, and support for MySQL, PostgreSQL, SQLite, and Supabase",
     "type": "library",
-    "version": "2.30.2",
+    "version": "2.31.0",
     "keywords": [
         "orm",
         "database",

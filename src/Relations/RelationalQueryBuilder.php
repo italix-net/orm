@@ -141,6 +141,15 @@ class TableQuery
     /** @var array<int, string> Specific scope names disabled for this query. See without_scopes(). */
     protected array $disabled_scope_names = [];
 
+    /** The partition this query was made in; null means the table's default. See `Table::partitioned_by()`. */
+    protected ?string $partition_context_c = null;
+
+    /** @var list<string>|null Partitions named by within()/across(); null means the context. */
+    protected ?array $partitions_override_c = null;
+
+    /** Every partition, for this query. See across_all(). */
+    protected bool $all_partitions_flag = false;
+
     /**
      * Create a new TableQuery
      */
@@ -261,6 +270,48 @@ class TableQuery
         return $this;
     }
 
+    /** Set by `DataManager::query_table()`, like set_scopes() — see `QueryBuilder::set_partition_context()`. */
+    public function set_partition_context(?string $partition_c): self
+    {
+        $this->partition_context_c = $partition_c;
+
+        return $this;
+    }
+
+    /** This query reads `$partition_c` instead of its context — see `QueryBuilder::within()`. */
+    public function within(string $partition_c): self
+    {
+        return $this->across([$partition_c]);
+    }
+
+    /**
+     * This query reads every partition listed — see `QueryBuilder::across()`.
+     *
+     * @param list<string> $partitions_c
+     */
+    public function across(array $partitions_c): self
+    {
+        if ($partitions_c === []) {
+            throw new \InvalidArgumentException(
+                'across() needs at least one partition; across_all() says "all" on purpose.'
+            );
+        }
+
+        $query = clone $this;
+        $query->partitions_override_c = array_values(array_unique(array_map('strval', $partitions_c)));
+        $query->all_partitions_flag = false;
+        return $query;
+    }
+
+    /** This query reads every partition — see `QueryBuilder::across_all()`. */
+    public function across_all(): self
+    {
+        $query = clone $this;
+        $query->partitions_override_c = null;
+        $query->all_partitions_flag = true;
+        return $query;
+    }
+
     /**
      * Skip global scopes on this query — every one of them with no
      * arguments, or only the named ones. A no-op on a table with none
@@ -294,6 +345,15 @@ class TableQuery
     protected function effective_where(): ?SQLExpression
     {
         $where = $this->where_condition;
+
+        // Table::partitioned_by() — see QueryBuilder::partition_condition(), the same rule.
+        if ($this->table->is_partitioned() && !$this->all_partitions_flag) {
+            $partition = $this->table->partition_condition(
+                $this->partitions_override_c ?? [$this->partition_context_c ?? $this->table->partition_default()]
+            );
+
+            $where = $where === null ? $partition : new AndExpression($where, $partition);
+        }
 
         if ($this->table->has_soft_deletes() && !$this->with_trashed_flag) {
             $column_name = $this->table->soft_delete_column();
@@ -851,7 +911,7 @@ class TableQuery
         }
 
         // Build and execute related query
-        $related_query = new TableQuery($this->connection, $this->dialect, $target_table);
+        $related_query = (new TableQuery($this->connection, $this->dialect, $target_table))->across_all();
 
         // Apply config filters
         if (isset($config['columns'])) {
@@ -959,7 +1019,7 @@ class TableQuery
         }
 
         // Build related query
-        $related_query = new TableQuery($this->connection, $this->dialect, $target_table);
+        $related_query = (new TableQuery($this->connection, $this->dialect, $target_table))->across_all();
 
         if (isset($config['columns'])) {
             $related_query = $related_query->columns($this->with_matching_key($config['columns'], $references[0]));
@@ -1152,7 +1212,7 @@ class TableQuery
         }
 
         // Query target table
-        $related_query = new TableQuery($this->connection, $this->dialect, $target_table);
+        $related_query = (new TableQuery($this->connection, $this->dialect, $target_table))->across_all();
 
         if (isset($config['columns'])) {
             $related_query = $related_query->columns($this->with_matching_key($config['columns'], $target_references[0]));
@@ -1274,7 +1334,7 @@ class TableQuery
 
             $ids = array_values($indices_ids);
 
-            $related_query = new TableQuery($this->connection, $this->dialect, $target_table);
+            $related_query = (new TableQuery($this->connection, $this->dialect, $target_table))->across_all();
 
             if (isset($config['columns'])) {
                 $related_query = $related_query->columns($this->with_matching_key($config['columns'], $target_pk));
@@ -1365,7 +1425,7 @@ class TableQuery
         }
 
         // Build query for polymorphic children
-        $related_query = new TableQuery($this->connection, $this->dialect, $target_table);
+        $related_query = (new TableQuery($this->connection, $this->dialect, $target_table))->across_all();
 
         if (isset($config['columns'])) {
             $related_query = $related_query->columns($this->with_matching_key($config['columns'], $id_column));

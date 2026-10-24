@@ -299,6 +299,19 @@ class Blueprint
         return $this->timestamp($name)->nullable();
     }
 
+    /**
+     * Add a partition marker column (see `Table::partitioned_by()`): `VARCHAR(191) NOT NULL DEFAULT ''`, indexed,
+     * since every query on the table filters on it. Unique keys should lead with it — `(scope_c, code)` — so each
+     * partition has its own.
+     */
+    public function partition(string $name = 'scope_c'): ColumnDefinition
+    {
+        $column = $this->string($name, 191)->default('');
+        $this->index([$name]);
+
+        return $column;
+    }
+
     // ============================================
     // JSON Type
     // ============================================

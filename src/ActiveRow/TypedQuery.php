@@ -138,6 +138,37 @@ final class TypedQuery
         return $copy;
     }
 
+    /** This query reads `$partition_c` instead of its context — see `QueryBuilder::within()`. */
+    public function within(string $partition_c): self
+    {
+        $copy = clone $this;
+        $copy->query = $this->query->within($partition_c);
+
+        return $copy;
+    }
+
+    /**
+     * This query reads every partition listed — see `QueryBuilder::across()`.
+     *
+     * @param list<string> $partitions_c
+     */
+    public function across(array $partitions_c): self
+    {
+        $copy = clone $this;
+        $copy->query = $this->query->across($partitions_c);
+
+        return $copy;
+    }
+
+    /** This query reads every partition — see `QueryBuilder::across_all()`. */
+    public function across_all(): self
+    {
+        $copy = clone $this;
+        $copy->query = $this->query->across_all();
+
+        return $copy;
+    }
+
     /**
      * Skip global scopes registered with `DataManager::add_global_scope()`
      * — every one of them with no arguments, or only the named ones. A

@@ -135,6 +135,57 @@ trait Persistable
     }
 
     /**
+     * A row of a partitioned table (`Table::partitioned_by()`) carries its partition, and is written, deleted and
+     * reloaded only there. Otherwise the query would carry the caller's partition, match nothing, and return as if it
+     * had worked. So this refuses, loudly: a row that does not carry the column (read with a subset of columns) or
+     * carries NULL; a row whose partition changed in memory — a move, even through a composite key, which save()
+     * would strip from the SET; and a row of another partition than the caller's.
+     */
+    protected function assert_own_partition(Table $table): void
+    {
+        if (!$table->is_partitioned()) {
+            return;
+        }
+
+        $name = (string) $table->partition_column();
+        $db   = $table->get_column($name)?->get_db_name() ?? $name;
+        $key  = array_key_exists($db, $this->original) ? $db : (array_key_exists($name, $this->original) ? $name : null);
+
+        if ($key === null || $this->original[$key] === null) {
+            throw new \LogicException(sprintf(
+                'This %s row does not carry its partition ("%s"): read it with that column to write, delete or reload it.',
+                $table->get_name(),
+                $db
+            ));
+        }
+
+        $row_c = (string) $this->original[$key];
+
+        if (array_key_exists($key, $this->data) && (string) $this->data[$key] !== $row_c) {
+            throw new \LogicException(sprintf(
+                'This %s row would move from partition "%s" to "%s": a row never leaves its partition through save(); '
+                . 'use $dm->update(...)->across_all() if that is the intent.',
+                $table->get_name(),
+                $row_c,
+                (string) $this->data[$key]
+            ));
+        }
+
+        $here_c = static::get_dm()->partition() ?? $table->partition_default();
+
+        if ($row_c !== $here_c) {
+            throw new \LogicException(sprintf(
+                'This %s row belongs to partition "%s", and this code runs in "%s": write or reload it inside '
+                . '$dm->with_partition(\'%s\', ...).',
+                $table->get_name(),
+                $row_c,
+                $here_c,
+                $row_c
+            ));
+        }
+    }
+
+    /**
      * Save the row to the database
      *
      * Performs INSERT for new records, UPDATE for existing ones.
@@ -154,6 +205,7 @@ trait Persistable
 
         if ($this->exists()) {
             // UPDATE existing record
+            $this->assert_own_partition($table);
             $dirty = $this->get_dirty();
 
             if (!empty($dirty)) {
@@ -211,6 +263,17 @@ trait Persistable
                 ->values($data)
                 ->execute();
 
+            // Table::partitioned_by() — the partition build_insert() filled in, kept on the row, so that it is
+            // written and deleted there later (assert_own_partition()). A value the caller set is already here.
+            if ($table->is_partitioned()) {
+                $name = (string) $table->partition_column();
+                $db   = $table->get_column($name)?->get_db_name() ?? $name;
+
+                if (!array_key_exists($db, $this->data) && !array_key_exists($name, $this->data)) {
+                    $this->data[$db] = $dm->partition() ?? $table->partition_default();
+                }
+            }
+
             // Get the auto-generated ID — again, single-column keys only.
             if (!is_array($pk)) {
                 $new_id = $dm->last_insert_id();
@@ -255,6 +318,8 @@ trait Persistable
         $dm = static::get_dm();
         $table = static::get_table();
 
+        $this->assert_own_partition($table);
+
         // Run before_delete hooks
         $this->run_hooks('before_delete');
 
@@ -294,6 +359,7 @@ trait Persistable
         // get_key() already returns the exact shape find() expects either
         // way — a scalar for a single-column key, [column => value, ...]
         // for a composite one.
+        $this->assert_own_partition($table);
         $fresh = $dm->query_table($table)->find($this->get_key());
 
         if ($fresh === null) {

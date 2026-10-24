@@ -1667,6 +1667,52 @@ replaces it rather than adding a second one. `TypedQuery::without_scopes()` forw
 Like `soft_deletes()`'s own filter, this narrows reads only — `UPDATE`/`DELETE` do not go through
 `effective_where()`, so a scoped-out row is still reachable to correct or purge by primary key.
 
+## Partitions
+
+Every row of a partitioned table belongs to **exactly one** partition — a client, a collection, a tenant — and
+every query a `DataManager` builds carries the partition it was made in. Built in, like `soft_deletes()`, not a
+global scope: a scope can only filter a read, and a partition has to fill writes and filter them too.
+
+```php
+$terms = mysql_table('ix_taxon_terms', [
+    'id'           => serial(),
+    'collection_c' => varchar(191)->not_null()->default(''),
+    'code'         => varchar(191)->not_null(),
+])->partitioned_by('collection_c');      // defaults: 'scope_c', and '' when no context names one
+
+$dm->with_partition('shop-catalogue', function (DataManager $dm) use ($terms) {
+    $dm->insert($terms)->values(['code' => '42'])->execute();          // collection_c = 'shop-catalogue'
+    $dm->delete($terms)->where(eq($terms->code, '42'))->execute();     // …only there, not in every collection
+});
+
+$dm->select()->from($terms)->within('universal')->execute();                    // another partition
+$dm->select()->from($terms)->across(['shop-catalogue', 'universal'])->execute(); // several
+$dm->select()->from($terms)->across_all()->execute();                           // all: admin, export
+```
+
+- **INSERT** fills the column unless the caller set it (`timestamps()`'s rule); `within()` names the partition,
+  `across()`/`across_all()` are refused — a row goes into one.
+- **SELECT, UPDATE and DELETE** are filtered — both engines, `select()` and `query_table()`, and `TypedQuery`.
+- **An UPDATE that sets the column is refused** unless the query says `across_all()` — whether the key is the
+  column's PHP name or its database name, in any letter case.
+- **An upsert (`on_conflict_do_update()`) is refused**: its conflict key — a primary key never leads with the
+  partition — can match another partition's row, and MySQL's `ON DUPLICATE KEY` cannot be filtered. Look the row up,
+  then insert or update. `on_conflict_do_nothing()` stays: it writes nothing where it conflicts — but a unique key
+  not led by the partition makes it skip rows because of *another* partition's, so lead unique keys with it.
+- **An `ActiveRow` carries its partition, and is written, deleted and reloaded only there**: `save()`, `delete()`,
+  `force_delete()` and `refresh()` of a row read with `within('b')` refuse to run anywhere but
+  `with_partition('b', …)`, rather than matching nothing and returning as if they had worked. An inserted row
+  learns the partition it went into; a row read without the partition column, or holding NULL there, refuses to
+  write; changing it in memory is refused, even when it is part of the primary key.
+- **No context** means the table's default, `''` — a partition like the others, isolated like them.
+- `with_partition()` restores the previous partition on the way out, exception or not; calls nest. A builder
+  keeps the partition it was made in.
+- `without_scopes()` and `with_trashed()` do not lift it. Joined tables and eager-loaded relations are not
+  filtered: they are reached through keys the filtered rows hold. Raw SQL is not filtered.
+- `Blueprint::partition('collection_c')` creates the column, `VARCHAR(191) NOT NULL DEFAULT ''`, indexed. Unique
+  keys should lead with it.
+- Not a security boundary: who may see which partition is the application's decision.
+
 ## Operators
 
 **Either side of a condition can be an expression.** The operators take a `Column` — the ordinary

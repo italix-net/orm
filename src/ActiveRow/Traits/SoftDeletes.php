@@ -177,6 +177,8 @@ trait SoftDeletes
         // ever composed alongside it (the method_exists() guard above
         // assumes as much already), so it is reachable here the same way
         // any two traits on the same class share their methods.
+        $this->assert_own_partition($table);
+
         $dm->delete($table)
             ->force()
             ->where($this->primary_key_condition($table))

@@ -71,6 +71,15 @@ class QueryBuilder
     /** @var mixed The version value an UPDATE's WHERE must still match. See expect_version(). */
     protected $expected_version = null;
 
+    /** The partition this builder was made in — set by `DataManager`; null means the table's default. See `Table::partitioned_by()`. */
+    protected ?string $partition_context_c = null;
+
+    /** @var list<string>|null Partitions named for this query by within()/across(); null means the context. */
+    protected ?array $partitions_override_c = null;
+
+    /** Every partition, for this query. See across_all(). */
+    protected bool $all_partitions_flag = false;
+
     /** @var array JOIN clauses */
     protected array $join_clauses = [];
     
@@ -677,6 +686,127 @@ class QueryBuilder
     }
 
     /**
+     * The partition this builder was made in — called by `DataManager` on every builder it hands out, so a query
+     * keeps the partition it was written in even if it runs after `with_partition()` returned. A no-op on a table
+     * that is not `Table::partitioned_by()`.
+     */
+    public function set_partition_context(?string $partition_c): self
+    {
+        $this->partition_context_c = $partition_c;
+
+        return $this;
+    }
+
+    /** This query reads and writes `$partition_c` instead of its context. See `Table::partitioned_by()`. */
+    public function within(string $partition_c): self
+    {
+        return $this->across([$partition_c]);
+    }
+
+    /**
+     * This query reads, updates and deletes in every partition listed — the case of a search over several
+     * collections. An INSERT goes into one partition only, so it refuses more than one.
+     *
+     * @param list<string> $partitions_c
+     */
+    public function across(array $partitions_c): self
+    {
+        if ($partitions_c === []) {
+            throw new InvalidArgumentException(
+                'across() needs at least one partition. No partition would match nothing, and reading it as "all" '
+                . 'would widen a query by accident; across_all() says that on purpose.'
+            );
+        }
+
+        $builder = clone $this;
+        $builder->partitions_override_c = array_values(array_unique(array_map('strval', $partitions_c)));
+        $builder->all_partitions_flag = false;
+        return $builder;
+    }
+
+    /**
+     * This query sees every partition — administration, exporting a slice. The only way an UPDATE may set the
+     * partition column.
+     */
+    public function across_all(): self
+    {
+        $builder = clone $this;
+        $builder->partitions_override_c = null;
+        $builder->all_partitions_flag = true;
+        return $builder;
+    }
+
+    /** The partition condition this query carries, or null: no table, not partitioned, or across_all(). */
+    protected function partition_condition(): ?SQLExpression
+    {
+        if ($this->table === null || !$this->table->is_partitioned() || $this->all_partitions_flag) {
+            return null;
+        }
+
+        return $this->table->partition_condition(
+            $this->partitions_override_c ?? [$this->partition_context_c ?? $this->table->partition_default()]
+        );
+    }
+
+    /** `$this->where_condition` AND'd with the partition condition — what SELECT, UPDATE and DELETE all start from. */
+    protected function where_with_partition(): ?SQLExpression
+    {
+        $partition = $this->partition_condition();
+
+        if ($partition === null) {
+            return $this->where_condition;
+        }
+
+        return $this->where_condition === null ? $partition : and_($this->where_condition, $partition);
+    }
+
+    /**
+     * Whether `$values` names the partition column — by its PHP key, or by its database name in any letter case, since
+     * the SQL built from them reaches the same column either way.
+     *
+     * @param array<string, mixed> $values
+     */
+    protected function sets_partition_column(array $values): bool
+    {
+        $name = (string) $this->table->partition_column();
+        $db   = $this->table->get_column($name)?->get_db_name() ?? $name;
+
+        foreach (array_keys($values) as $key) {
+            $key_db = $this->table->get_column((string) $key)?->get_db_name() ?? (string) $key;
+
+            if ((string) $key === $name || strcasecmp($key_db, $db) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Refuse writing `$values` when they set the partition column and the query did not say across_all().
+     *
+     * @param array<string, mixed>|null $values
+     */
+    protected function refuse_partition_move(?array $values, string $clause): void
+    {
+        if ($values === null || $this->table === null || !$this->table->is_partitioned() || $this->all_partitions_flag) {
+            return;
+        }
+
+        $column = (string) $this->table->partition_column();
+
+        if ($this->sets_partition_column($values)) {
+            throw new \LogicException(sprintf(
+                '%s sets "%s", the partition column of "%s": a row would leave its partition. '
+                . 'Say ->across_all() on this query if that is the intent.',
+                $clause,
+                $column,
+                $this->table->get_name()
+            ));
+        }
+    }
+
+    /**
      * The `WHERE` a SELECT actually runs with: `$this->where_condition`,
      * AND'd with `deleted_col IS NULL` when `Table::soft_deletes()` is
      * declared and `with_trashed()` was not called, further AND'd with
@@ -687,7 +817,7 @@ class QueryBuilder
      */
     protected function effective_where(): ?SQLExpression
     {
-        $where = $this->where_condition;
+        $where = $this->where_with_partition();
 
         if ($this->table !== null && $this->table->has_soft_deletes() && !$this->with_trashed_flag) {
             $column_name = $this->table->soft_delete_column();
@@ -1679,6 +1809,37 @@ class QueryBuilder
             unset($row);
         }
 
+        // Table::partitioned_by() — every row goes into the query's one
+        // partition unless the caller (or a before_insert hook) named one.
+        // An upsert is refused: its conflict key can match a row of another
+        // partition (a primary key never leads with the partition column),
+        // and MySQL's ON DUPLICATE KEY cannot be filtered.
+        if ($this->table->is_partitioned()) {
+            if ($this->conflict_update !== null) {
+                throw new \LogicException(sprintf(
+                    'An upsert on "%s", a partitioned table, is refused: its conflict key can match a row of another '
+                    . 'partition, and the update would land there. Look the row up in this partition, then insert or update it.',
+                    $this->table->get_name()
+                ));
+            }
+
+            if ($this->all_partitions_flag || count($this->partitions_override_c ?? []) > 1) {
+                throw new \LogicException(
+                    'An INSERT goes into one partition: use within() or the context, not across() or across_all().'
+                );
+            }
+
+            $partition_column = (string) $this->table->partition_column();
+            $partition_c      = $this->partitions_override_c[0] ?? $this->partition_context_c ?? $this->table->partition_default();
+
+            foreach ($this->insert_values as &$row) {
+                if (!$this->sets_partition_column($row)) {
+                    $row[$partition_column] = $partition_c;
+                }
+            }
+            unset($row);
+        }
+
         // Table::timestamps() — every row of a single statement gets the
         // same instant, and a value the caller (or a before_insert hook,
         // above) already provided is never overwritten (ActiveRow's own
@@ -1884,6 +2045,8 @@ class QueryBuilder
             }
         }
 
+        $this->refuse_partition_move($this->update_values, 'This UPDATE');
+
         // Table::timestamps() — refilled on every UPDATE unless the caller
         // (or a before_update hook, above) is already setting it (same rule
         // as build_insert()).
@@ -1942,8 +2105,9 @@ class QueryBuilder
         // affected rather than a silent overwrite. See execute(), which
         // raises Locking\OptimisticLockException when that happens.
         $where_parts = [];
-        if ($this->where_condition !== null) {
-            $where_parts[] = $this->where_condition->to_sql($this->dialect, $params);
+        $where = $this->where_with_partition();
+        if ($where !== null) {
+            $where_parts[] = $where->to_sql($this->dialect, $params);
         }
         if ($expected_version_value !== null) {
             $params[] = $expected_version_value;
@@ -1988,8 +2152,9 @@ class QueryBuilder
         $sql = "DELETE FROM {$table_name}";
 
         // WHERE
-        if ($this->where_condition !== null) {
-            $sql .= ' WHERE ' . $this->where_condition->to_sql($this->dialect, $params);
+        $where = $this->where_with_partition();
+        if ($where !== null) {
+            $sql .= ' WHERE ' . $where->to_sql($this->dialect, $params);
         }
 
         // LIMIT (MySQL)
@@ -2020,8 +2185,9 @@ class QueryBuilder
         $sql = "UPDATE {$table_name} SET " . $this->quote_identifier($col_name)
              . ' = ' . $this->get_placeholder(count($params));
 
-        if ($this->where_condition !== null) {
-            $sql .= ' WHERE ' . $this->where_condition->to_sql($this->dialect, $params);
+        $where = $this->where_with_partition();
+        if ($where !== null) {
+            $sql .= ' WHERE ' . $where->to_sql($this->dialect, $params);
         }
 
         if ($this->return_values && $this->supports_returning()) {

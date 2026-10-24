@@ -3,6 +3,33 @@
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning policy: `VERSIONING.md` at the
 project root.
 
+## [2.32.0] — 2026-09-25
+
+### Added
+
+- **`Table::partitioned_by()` — every row in exactly one partition.** A client, a collection, a tenant: a
+  pluggable column, like `timestamps()` and `soft_deletes()`, with its name and default value the caller's to
+  choose (`'scope_c'`, `''`). `DataManager::with_partition($partition_c, $work)` sets the partition of every
+  query built inside `$work`, and restores the previous one on the way out, exception or not.
+
+  INSERT fills the column unless the caller set it; SELECT, **UPDATE and DELETE** are filtered — the writes are
+  the point: a DELETE by code in one partition no longer reaches that code in all of them. An UPDATE that sets
+  the column — by PHP key or database name, any letter case — is refused unless the query says `across_all()`.
+  An upsert (`on_conflict_do_update()`) on a partitioned table is refused: its conflict key can match another
+  partition's row. An `ActiveRow` carries its partition — an inserted one learns it — and refuses `save()`,
+  `delete()`, `force_delete()` and `refresh()` outside it, without it (a subset of columns, NULL), or when it changed
+  in memory, instead of silently matching nothing. `within()`, `across()` and `across_all()` name
+  other partitions for one query, on `QueryBuilder`, `TableQuery` and `TypedQuery`. `Blueprint::partition()`
+  creates the column, indexed.
+
+  Built in rather than a global scope: a scope can only narrow a read, and cannot fill a write or say "these
+  two partitions, for this query". `without_scopes()` and `with_trashed()` do not lift it. Eager-loaded
+  relations are not filtered — their rows are reached through keys the filtered rows hold, the case of a
+  mapping pointing into another partition.
+
+  Tables that do not declare it behave exactly as before. `PartitionTest`, 61 assertions — 18 of them added after
+  two rounds of adversarial review found the upsert, the database-name key and the silent `ActiveRow` writes.
+
 ## [2.31.0] — 2026-09-23
 
 ### Fixed

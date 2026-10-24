@@ -19,6 +19,9 @@ use Italix\Contracts\TableMeta;
 use Italix\Contracts\ColumnMeta;
 use Italix\Contracts\DelegatedTableMeta;
 use Italix\Contracts\NamedTableMeta;
+use Italix\Orm\Operators\SQLExpression;
+
+use function Italix\Orm\Operators\{eq, in_};
 
 /**
  * Represents a database table with its columns and constraints.
@@ -99,6 +102,12 @@ class Table implements DelegatedTableMeta, NamedTableMeta
 
     /** The optimistic-locking version column name, or `null` for a table with none. See `optimistic_locking()`. */
     protected ?string $version_column = null;
+
+    /** The partition marker column name, or `null` for a table with none. See `partitioned_by()`. */
+    protected ?string $partition_column = null;
+
+    /** The partition a row belongs to when no context names one. See `partitioned_by()`. */
+    protected string $partition_default_c = '';
 
     // =========================================
     // Delegated Types Configuration
@@ -645,6 +654,68 @@ class Table implements DelegatedTableMeta, NamedTableMeta
     public function version_column(): ?string
     {
         return $this->version_column;
+    }
+
+    /**
+     * Declare that every row of this table belongs to exactly one partition, named in `$column` — a world of
+     * its own: a client, a collection, a tenant.
+     *
+     * Once declared, every query built by a `DataManager` carries the partition it was made in
+     * (`DataManager::with_partition()`), or `$default_c` when there is none:
+     *
+     * - **INSERT** fills `$column` with it, unless the caller already put a value there — `timestamps()`'s rule;
+     * - **SELECT, UPDATE and DELETE** are filtered on it — the writes too, which is what makes this a partition
+     *   rather than a search filter: without it, a DELETE by code in one partition deletes that code in all;
+     * - an **UPDATE that sets `$column`** is refused unless the query says `across_all()` — a row never leaves
+     *   its partition by accident.
+     *
+     * `within()`, `across()` and `across_all()` name other partitions for one query, visibly. `without_scopes()`
+     * and `with_trashed()` do not lift the filter: it is not a scope and not a soft delete. It applies to the
+     * query's own table only — joined tables and eager-loaded relations are reached through keys the filtered
+     * rows already hold. Raw SQL (`DataManager::query()`, `execute()`) is not filtered: code that writes its own
+     * SQL names the partition itself.
+     *
+     * Not a security boundary: who may see which partition is the caller's decision.
+     */
+    public function partitioned_by(string $column = 'scope_c', string $default_c = ''): self
+    {
+        $this->partition_column    = $column;
+        $this->partition_default_c = $default_c;
+
+        return $this;
+    }
+
+    public function is_partitioned(): bool
+    {
+        return $this->partition_column !== null;
+    }
+
+    public function partition_column(): ?string
+    {
+        return $this->partition_column;
+    }
+
+    public function partition_default(): string
+    {
+        return $this->partition_default_c;
+    }
+
+    /**
+     * The condition a query in `$partitions_c` carries: `column = ?` for one partition, `column IN (…)` for
+     * several. The column must be declared with the table's others — a partition nobody can index is not one.
+     *
+     * @param list<string> $partitions_c
+     */
+    public function partition_condition(array $partitions_c): SQLExpression
+    {
+        $column = $this->get_column((string) $this->partition_column) ?? throw new \LogicException(sprintf(
+            'Table "%s" is partitioned_by("%s") but has no such column. Declare it with the others: '
+            . "varchar(191)->not_null()->default('').",
+            $this->get_name(),
+            (string) $this->partition_column
+        ));
+
+        return count($partitions_c) === 1 ? eq($column, $partitions_c[0]) : in_($column, $partitions_c);
     }
 
     /**

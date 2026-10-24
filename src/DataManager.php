@@ -54,6 +54,9 @@ class DataManager
     /** @var ScopeRegistry Global scopes applied to every read, until without_scopes() */
     protected ScopeRegistry $scopes;
 
+    /** The partition every builder made from here on reads and writes; null means each table's default. See with_partition(). */
+    protected ?string $partition_c = null;
+
     /** @var Driver[] Read-only copies of the database, if any were given */
     protected array $replicas = [];
 
@@ -132,6 +135,38 @@ class DataManager
         $this->scopes->add($table, $name, $scope);
 
         return $this;
+    }
+
+    /**
+     * Run `$work` with `$partition_c` as the partition of every query built inside it, against every table
+     * declared `Table::partitioned_by()` — then restore the previous one, whether `$work` returned or threw, so a
+     * long-lived worker never carries one job's partition into the next.
+     *
+     *     $dm->with_partition('shop-catalogue', function (DataManager $dm) use ($terms) {
+     *         $dm->insert($terms)->values([...])->execute();   // collection_c = 'shop-catalogue'
+     *         return $dm->select()->from($terms)->execute();   // WHERE collection_c = 'shop-catalogue'
+     *     });
+     *
+     * A builder keeps the partition it was made in, even if it runs after this returns. Nested calls stack.
+     *
+     * @return mixed what `$work` returned
+     */
+    public function with_partition(string $partition_c, callable $work)
+    {
+        $previous = $this->partition_c;
+        $this->partition_c = $partition_c;
+
+        try {
+            return $work($this);
+        } finally {
+            $this->partition_c = $previous;
+        }
+    }
+
+    /** The partition queries built now are made in; null outside with_partition(). */
+    public function partition(): ?string
+    {
+        return $this->partition_c;
     }
 
     /**
@@ -355,7 +390,8 @@ class DataManager
         // once at construction: whether a replica may answer depends on what has
         // happened since — see use_replicas().
         return $this->query_builder->select($columns)
-            ->set_connection($this->read_driver()->get_connection());
+            ->set_connection($this->read_driver()->get_connection())
+            ->set_partition_context($this->partition_c);
     }
 
     /**
@@ -366,7 +402,8 @@ class DataManager
         $this->note_write();
 
         return $this->query_builder->insert($table)
-            ->set_connection($this->driver->get_connection());
+            ->set_connection($this->driver->get_connection())
+            ->set_partition_context($this->partition_c);
     }
 
     /**
@@ -377,7 +414,8 @@ class DataManager
         $this->note_write();
 
         return $this->query_builder->update($table)
-            ->set_connection($this->driver->get_connection());
+            ->set_connection($this->driver->get_connection())
+            ->set_partition_context($this->partition_c);
     }
 
     /**
@@ -388,7 +426,8 @@ class DataManager
         $this->note_write();
 
         return $this->query_builder->delete($table)
-            ->set_connection($this->driver->get_connection());
+            ->set_connection($this->driver->get_connection())
+            ->set_partition_context($this->partition_c);
     }
 
     /**
@@ -459,7 +498,7 @@ class DataManager
 
         $this->transaction(function () use ($table, $rows, $chunk_n, &$written_n): void {
             foreach (array_chunk($rows, $chunk_n) as $chunk) {
-                $this->query_builder->insert($table)->values($chunk)->execute();
+                $this->query_builder->insert($table)->set_partition_context($this->partition_c)->values($chunk)->execute();
                 $written_n += count($chunk);
             }
         });
@@ -1036,7 +1075,8 @@ class DataManager
         // way QueryBuilder does (get_relational_builder()->query() hands
         // back a brand new instance every call) — so global scopes are
         // threaded on explicitly, here, rather than once at construction.
-        return $this->get_relational_builder()->query($table)->set_scopes($this->scopes);
+        return $this->get_relational_builder()->query($table)->set_scopes($this->scopes)
+            ->set_partition_context($this->partition_c);
     }
 
     /**

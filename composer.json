@@ -1,6 +1,6 @@
 {
     "name": "italix/orm",
-    "description": "A lightweight, type-safe ORM for PHP with migrations, query builder, and support for MySQL, PostgreSQL, SQLite, and Supabase",
+    "description": "A type-safe ORM for PHP: query builder, migrations, relations, partitions (rows that belong to one tenant), soft deletes, optimistic locking and read replicas — on MySQL, PostgreSQL, SQLite and Supabase",
     "type": "library",
     "version": "2.32.0",
     "keywords": [
